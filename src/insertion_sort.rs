@@ -1,4 +1,5 @@
 // 挿入ソート
+// Θ(n^2)
 fn insertion_sort(list: &mut Vec<i32>) {
     for j in 1..list.len() {
         let mut i = j;

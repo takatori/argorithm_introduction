@@ -70,7 +70,7 @@ fn square_matrix_multiply_recursive(
             (size, size),
         );
     }
-    println!("n: {}, c: {:?}", n, c);
+    println!("n: {}, a_p: {:?}, b_p:{:?}, c: {:?}", n, a_p, b_p, c);
     return c;
 }
 

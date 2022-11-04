@@ -1,2 +1,2 @@
-mod array;
-mod interface;
+pub mod interface;
+pub mod data_structure;

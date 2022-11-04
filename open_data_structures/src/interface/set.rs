@@ -3,45 +3,45 @@
 /// n個の互いに相異なる要素が含まれる。つまり、
 /// 同じ要素が複数入っていることはない。
 /// 要素の並び順は決まっていない
-pub trait USet<T> {
+pub trait USet<'a, T> {
     /// 集合の要素数nを返す
-    fn size() -> usize;
+    fn size(&self) -> usize;
 
     /// 要素xが集合に入っていなければ集合に追加する
     /// x = yを満たす集合の要素yが存在しないなら、集合にxを加える
     /// xが集合に追加されたらtrueを返し、そうでなければfalseを返す
-    fn add(x: T) -> bool;
+    fn add(&mut self, x: T) -> bool;
 
     /// 集合からxを削除する
     /// x = yを満たす集合の要素yを探し、集合から取り除く
     /// そのような要素が見つかればyを見つかれなければnullを返す
-    fn remove(x: T) -> Option<T>;
+    fn remove(&mut self, x: T) -> Option<T>;
 
     /// 集合にxが入っていればそれを見つける
     /// x = yを満たす集合の要素yを見つける。
     /// そのような要素が見つかればyを、見つからなければnullを返す
-    fn find(x: T) -> Option<T>;
+    fn find(self, x: T) -> Option<&'a T>;
 }
 
 /// 順序付された要素の集まりを表現する
 /// 全順序集合の要素が入る
 /// 全順序集合とは、任意の二つの要素xとyについて大小を比較できるような集合
-pub trait SSet<T> {
+pub trait SSet<'a, T> {
     /// 集合の要素数nを返す
-    fn size() -> usize;
+    fn size(self) -> usize;
 
     /// 要素xが集合に入っていなければ集合に追加する
     /// x = yを満たす集合の要素yが存在しないなら、集合にxを加える
     /// xが集合に追加されたらtrueを返し、そうでなければfalseを返す
-    fn add(x: T) -> bool;
+    fn add(&mut self ,x: T) -> bool;
 
     /// 集合からxを削除する
     /// x = yを満たす集合の要素yを探し、集合から取り除く
     /// そのような要素が見つかればyを見つかれなければnullを返す
-    fn remove(x: T) -> Option<T>;
+    fn remove(&mut self, x: T) -> Option<T>;
 
     /// 順序づけられた集合からxの位置を特定する
     /// すなわちy>=xを満たす最小の要素yを見つける
     /// もしそのようなyが存在すればそれを返し、存在しないならnullを返す
-    fn find(x: T) -> Option<T>;
+    fn find(self, x: T) -> Option<&'a T>;
 }

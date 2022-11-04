@@ -3,8 +3,8 @@ use std::vec;
 use crate::interface::list::List;
 
 struct ArrayStack<T> {
-    a: Box<[T]>,
-    n: usize, // 要素に入っているリストの要素数
+    a: Box<[T]>, // 通常はVecで良いが、Vecは自動的に配列の長さが変わるため、resizeを実装するためにあえてBoxで持っている
+    n: usize,    // 要素に入っているリストの要素数
 }
 
 impl<T: Default + Clone> ArrayStack<T> {
@@ -42,10 +42,12 @@ where
     }
 
     fn add(&mut self, i: usize, x: T) {
-        if self.n + 1 >= self.a.len() {
+        // 要素を一つ追加する分のキャパシティがなければresizeする
+        if self.n >= self.a.len() {
             self.resize();
         }
-        for j in (i..=self.n).rev().step_by(1) {
+
+        for j in (i + 1..=self.n).rev().step_by(1) {
             self.a[j] = self.a[j - 1].clone();
         }
         self.a[i] = x;
@@ -63,5 +65,53 @@ where
             self.resize();
         }
         x
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_resize() {
+        let mut array: ArrayStack<i32> = ArrayStack::new(1);
+        array.resize();
+        assert_eq!(array.a.len(), 1);
+        assert_eq!(array.n, 0);
+
+        array.add(0, 0);
+        assert_eq!(array.a.len(), 1);
+        assert_eq!(array.n, 1);
+    }
+
+    #[test]
+    fn test_array_stack() {
+        let mut array = ArrayStack::new(6);
+        array.add(0, "b");
+        array.add(1, "r");
+        array.add(2, "e");
+        array.add(3, "d");
+        assert_eq!(array.a, vec!["b", "r", "e", "d", "", ""].into_boxed_slice());
+        assert_eq!(array.n, 4);
+        array.add(2, "e");
+        assert_eq!(
+            array.a,
+            vec!["b", "r", "e", "e", "d", ""].into_boxed_slice()
+        );
+        assert_eq!(array.n, 5);
+        array.add(5, "r");
+        assert_eq!(
+            array.a,
+            vec!["b", "r", "e", "e", "d", "r"].into_boxed_slice()
+        );
+        assert_eq!(array.n, 6);
+        array.add(5, "e");
+        assert_eq!(
+            array.a,
+            vec!["b", "r", "e", "e", "d", "e", "r", "", "", "", "", ""].into_boxed_slice()
+        );
+        assert_eq!(array.n, 7);
     }
 }

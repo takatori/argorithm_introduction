@@ -7,7 +7,7 @@ pub trait List<T> {
     fn get(&self, i: usize) -> Option<&T>;
 
     /// x(i)の値をxにする
-    fn set(&mut self, i: usize, x: T);
+    fn set(&mut self, i: usize, x: T) -> T;
 
     /// xをi番目として追加し、x(i)..x(n-1)を後ろにずらす
     fn add(&mut self, i: usize, x: T);

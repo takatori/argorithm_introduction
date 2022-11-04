@@ -1,6 +1,7 @@
 use std::vec;
 
 use crate::interface::list::List;
+use crate::interface::stack::Stack;
 
 struct ArrayStack<T> {
     a: Box<[T]>, // 通常はVecで良いが、Vecは自動的に配列の長さが変わるため、resizeを実装するためにあえてBoxで持っている
@@ -8,7 +9,6 @@ struct ArrayStack<T> {
 }
 
 impl<T: Default + Clone> ArrayStack<T> {
-    
     fn new(size: usize) -> Self {
         Self {
             // ベクターで割り付けてから、Boxに変換する
@@ -19,11 +19,11 @@ impl<T: Default + Clone> ArrayStack<T> {
     }
 
     /// 配列の長さを変更する
-    /// 
+    ///
     /// # 計算量
-    /// O(n)の時間がかかる 
+    /// O(n)の時間がかかる
     /// 大きさ2nの配列bを割り当て、n個の要素をコピーする
-    /// 
+    ///
     /// 空のArrayStackに対して任意のm個のadd(i,x)およびremove(i)からなる操作の列を実行する。
     /// このときreizeにかかる時間はO(m)
     fn resize(&mut self) {
@@ -43,12 +43,12 @@ where
         self.n
     }
 
-    // 実行時間はO(1)    
+    // 実行時間はO(1)
     fn get(&self, i: usize) -> Option<&T> {
         self.a.get(i)
     }
 
-    // 実行時間はO(1)    
+    // 実行時間はO(1)
     fn set(&mut self, i: usize, x: T) -> T {
         std::mem::replace(&mut self.a[i], x)
     }
@@ -74,11 +74,24 @@ where
             self.a[j] = self.a[j + 1].clone();
         }
         self.n -= 1;
-        // 配列の長さに対して要素が少なすぎない場合はresizeする
+        // 配列の長さに対して要素が少なすぎる場合はresizeする
         if self.a.len() >= 3 * self.n {
             self.resize();
         }
         x
+    }
+}
+
+impl<T> Stack<T> for ArrayStack<T>
+where
+    T: Default + Clone,
+{
+    fn push(&mut self, x: T) {
+        ArrayStack::add(self, self.n, x);
+    }
+
+    fn pop(&mut self) -> T {
+        ArrayStack::remove(self, self.n - 1)
     }
 }
 
@@ -101,7 +114,27 @@ mod tests {
     }
 
     #[test]
-    fn test_array_stack() {
+    fn test_stack() {
+        let mut array = ArrayStack::new(2);
+        array.push(1);
+        assert_eq!(array.a, vec![1, 0].into_boxed_slice());
+        assert_eq!(array.n, 1);
+
+        array.push(2);
+        assert_eq!(array.a, vec![1, 2].into_boxed_slice());
+        assert_eq!(array.n, 2);
+
+        assert_eq!(array.pop(), 2);
+        assert_eq!(array.a, vec![1, 2].into_boxed_slice());
+        assert_eq!(array.n, 1);
+
+        assert_eq!(array.pop(), 1);
+        assert_eq!(array.a, vec![0].into_boxed_slice());
+        assert_eq!(array.n, 0);
+    }
+
+    #[test]
+    fn test_list() {
         let mut array = ArrayStack::new(6);
 
         array.add(0, "b");

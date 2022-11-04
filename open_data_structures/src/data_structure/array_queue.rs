@@ -59,3 +59,83 @@ where
         x
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_resize() {
+        let mut array: ArrayQueue<i32> = ArrayQueue::new(1);
+        array.resize();
+        assert_eq!(array.a.len(), 1);
+        assert_eq!(array.n, 0);
+
+        array.add(0, 0);
+        assert_eq!(array.a.len(), 1);
+        assert_eq!(array.n, 1);
+    }
+
+    #[test]
+    fn test_list() {
+        let mut array = ArrayQueue::new(6);
+
+        array.add(0, "b");
+        array.add(1, "r");
+        array.add(2, "e");
+        array.add(3, "d");
+        assert_eq!(array.a, vec!["b", "r", "e", "d", "", ""].into_boxed_slice());
+        assert_eq!(array.n, 4);
+
+        array.add(2, "e");
+        assert_eq!(
+            array.a,
+            vec!["b", "r", "e", "e", "d", ""].into_boxed_slice()
+        );
+        assert_eq!(array.n, 5);
+
+        array.add(5, "r");
+        assert_eq!(
+            array.a,
+            vec!["b", "r", "e", "e", "d", "r"].into_boxed_slice()
+        );
+        assert_eq!(array.n, 6);
+
+        array.add(5, "e");
+        assert_eq!(
+            array.a,
+            vec!["b", "r", "e", "e", "d", "e", "r", "", "", "", "", ""].into_boxed_slice()
+        );
+        assert_eq!(array.n, 7);
+
+        array.remove(4);
+        assert_eq!(
+            array.a,
+            vec!["b", "r", "e", "e", "e", "r", "r", "", "", "", "", ""].into_boxed_slice()
+        );
+        assert_eq!(array.n, 6);
+
+        array.remove(4);
+        assert_eq!(
+            array.a,
+            vec!["b", "r", "e", "e", "r", "r", "r", "", "", "", "", ""].into_boxed_slice()
+        );
+        assert_eq!(array.n, 5);
+
+        array.remove(4);
+        assert_eq!(
+            array.a,
+            vec!["b", "r", "e", "e", "", "", "", ""].into_boxed_slice()
+        );
+        assert_eq!(array.n, 4);
+
+        array.set(2, "i");
+        assert_eq!(
+            array.a,
+            vec!["b", "r", "i", "e", "", "", "", ""].into_boxed_slice()
+        );
+        assert_eq!(array.n, 4);
+    }
+}

@@ -8,14 +8,24 @@ struct ArrayStack<T> {
 }
 
 impl<T: Default + Clone> ArrayStack<T> {
+    
     fn new(size: usize) -> Self {
         Self {
+            // ベクターで割り付けてから、Boxに変換する
+            // 参考: https://mmi.hatenablog.com/entry/2017/08/06/230823
             a: vec![T::default(); size].into_boxed_slice(),
             n: 0,
         }
     }
 
-    // 配列の長さを変更する
+    /// 配列の長さを変更する
+    /// 
+    /// # 計算量
+    /// O(n)の時間がかかる 
+    /// 大きさ2nの配列bを割り当て、n個の要素をコピーする
+    /// 
+    /// 空のArrayStackに対して任意のm個のadd(i,x)およびremove(i)からなる操作の列を実行する。
+    /// このときreizeにかかる時間はO(m)
     fn resize(&mut self) {
         let mut b = vec![T::default(); std::cmp::max(2 * self.n, 1)].into_boxed_slice();
         for i in 0..self.n {
@@ -33,14 +43,17 @@ where
         self.n
     }
 
+    // 実行時間はO(1)    
     fn get(&self, i: usize) -> Option<&T> {
         self.a.get(i)
     }
 
+    // 実行時間はO(1)    
     fn set(&mut self, i: usize, x: T) -> T {
         std::mem::replace(&mut self.a[i], x)
     }
 
+    // resize()にかかる時間を無視した場合の実行時間 O(1+n-i)
     fn add(&mut self, i: usize, x: T) {
         // 要素を一つ追加する分のキャパシティがなければresizeする
         if self.n >= self.a.len() {
@@ -54,6 +67,7 @@ where
         self.n += 1;
     }
 
+    // resize()にかかる時間を無視した場合の実行時間 O(1+n-i)
     fn remove(&mut self, i: usize) -> T {
         let x = self.a[i].clone();
         for j in i..(self.n - 1) {

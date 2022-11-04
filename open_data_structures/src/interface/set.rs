@@ -33,7 +33,7 @@ pub trait SSet<'a, T> {
     /// 要素xが集合に入っていなければ集合に追加する
     /// x = yを満たす集合の要素yが存在しないなら、集合にxを加える
     /// xが集合に追加されたらtrueを返し、そうでなければfalseを返す
-    fn add(&mut self ,x: T) -> bool;
+    fn add(&mut self, x: T) -> bool;
 
     /// 集合からxを削除する
     /// x = yを満たす集合の要素yを探し、集合から取り除く

@@ -13,5 +13,5 @@ pub trait List<T> {
     fn add(&mut self, i: usize, x: T);
 
     /// x(i)を削除し、x(i+1)..x(n-1)を前にずらす
-    fn remove(&mut self, i: usize);
+    fn remove(&mut self, i: usize) -> T;
 }

@@ -3,6 +3,7 @@ use std::vec;
 use crate::interface::list::List;
 use crate::interface::stack::Stack;
 
+/// 配列を使ったスタック
 struct ArrayStack<T> {
     a: Box<[T]>, // 通常はVecで良いが、Vecは自動的に配列の長さが変わるため、resizeを実装するためにあえてBoxで持っている
     n: usize,    // 要素に入っているリストの要素数

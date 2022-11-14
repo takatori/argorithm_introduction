@@ -1,9 +1,9 @@
 use crate::interface::{list::List, queue::Queue};
 
 struct ArrayQueue<T> {
-    a: Box<[T]>,
-    j: usize,
-    n: usize,
+    a: Box<[T]>, // 循環配列
+    j: usize,    // 次に削除する要素を追跡するインデックス
+    n: usize,    // キューの要素数
 }
 
 impl<T: Default + Clone> ArrayQueue<T> {
@@ -60,9 +60,10 @@ where
     }
 }
 
-impl<T> Queue<T> for ArrayQueue<T> 
-where T: Default + Clone {
-    
+impl<T> Queue<T> for ArrayQueue<T>
+where
+    T: Default + Clone,
+{
     fn enqueue(&mut self, x: T) {
         ArrayQueue::add(self, 0, x)
     }
@@ -91,63 +92,92 @@ mod tests {
     }
 
     #[test]
-    fn test_list() {
+    fn test_queue() {
         let mut array = ArrayQueue::new(6);
 
-        array.add(0, "b");
-        array.add(1, "r");
-        array.add(2, "e");
-        array.add(3, "d");
-        assert_eq!(array.a, vec!["b", "r", "e", "d", "", ""].into_boxed_slice());
-        assert_eq!(array.n, 4);
+        array.enqueue("0");
+        assert_eq!(array.a, vec!["0", "", "", "", "", ""].into_boxed_slice());
+        assert_eq!(array.j, 0);
+        assert_eq!(array.n, 1);
 
-        array.add(2, "e");
+        array.enqueue("1");
+        assert_eq!(array.a, vec!["0", "1", "", "", "", ""].into_boxed_slice());
+        assert_eq!(array.j, 0);
+        assert_eq!(array.n, 2);
+
+        array.enqueue("a");
+        array.enqueue("b");
+        array.enqueue("c");
         assert_eq!(
             array.a,
-            vec!["b", "r", "e", "e", "d", ""].into_boxed_slice()
+            vec!["0", "1", "a", "b", "c", ""].into_boxed_slice()
         );
+        assert_eq!(array.j, 0);
         assert_eq!(array.n, 5);
 
-        array.add(5, "r");
+        array.dequeue();
+        array.dequeue();
         assert_eq!(
             array.a,
-            vec!["b", "r", "e", "e", "d", "r"].into_boxed_slice()
+            vec!["0", "1", "a", "b", "c", ""].into_boxed_slice()
         );
+        assert_eq!(array.j, 2);
+        assert_eq!(array.n, 3);
+
+        array.enqueue("d");
+        assert_eq!(
+            array.a,
+            vec!["0", "1", "a", "b", "c", "d"].into_boxed_slice()
+        );
+        assert_eq!(array.j, 2);
+        assert_eq!(array.n, 4);
+
+        array.enqueue("e");
+        assert_eq!(
+            array.a,
+            vec!["e", "1", "a", "b", "c", "d"].into_boxed_slice()
+        );
+        assert_eq!(array.j, 2);
+        assert_eq!(array.n, 5);
+
+        array.dequeue();
+        assert_eq!(
+            array.a,
+            vec!["e", "1", "a", "b", "c", "d"].into_boxed_slice()
+        );
+        assert_eq!(array.j, 3);
+        assert_eq!(array.n, 4);
+
+        array.enqueue("f");
+        assert_eq!(
+            array.a,
+            vec!["e", "f", "a", "b", "c", "d"].into_boxed_slice()
+        );
+        assert_eq!(array.j, 3);
+        assert_eq!(array.n, 5);
+
+        array.enqueue("g");
+        assert_eq!(
+            array.a,
+            vec!["e", "f", "g", "b", "c", "d"].into_boxed_slice()
+        );
+        assert_eq!(array.j, 3);
         assert_eq!(array.n, 6);
 
-        array.add(5, "e");
+        array.enqueue("h");
         assert_eq!(
             array.a,
-            vec!["b", "r", "e", "e", "d", "e", "r", "", "", "", "", ""].into_boxed_slice()
+            vec!["b", "c", "d", "e", "f", "g", "h", "", "", "", "", ""].into_boxed_slice()
         );
+        assert_eq!(array.j, 0);
         assert_eq!(array.n, 7);
 
-        array.remove(4);
+        array.dequeue();
         assert_eq!(
             array.a,
-            vec!["b", "r", "e", "e", "e", "r", "r", "", "", "", "", ""].into_boxed_slice()
+            vec!["b", "c", "d", "e", "f", "g", "h", "", "", "", "", ""].into_boxed_slice()
         );
+        assert_eq!(array.j, 1);
         assert_eq!(array.n, 6);
-
-        array.remove(4);
-        assert_eq!(
-            array.a,
-            vec!["b", "r", "e", "e", "r", "r", "r", "", "", "", "", ""].into_boxed_slice()
-        );
-        assert_eq!(array.n, 5);
-
-        array.remove(4);
-        assert_eq!(
-            array.a,
-            vec!["b", "r", "e", "e", "", "", "", ""].into_boxed_slice()
-        );
-        assert_eq!(array.n, 4);
-
-        array.set(2, "i");
-        assert_eq!(
-            array.a,
-            vec!["b", "r", "i", "e", "", "", "", ""].into_boxed_slice()
-        );
-        assert_eq!(array.n, 4);
     }
 }

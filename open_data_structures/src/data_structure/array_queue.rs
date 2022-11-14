@@ -1,4 +1,4 @@
-use crate::interface::list::List;
+use crate::interface::{list::List, queue::Queue};
 
 struct ArrayQueue<T> {
     a: Box<[T]>,
@@ -57,6 +57,18 @@ where
             self.resize();
         }
         x
+    }
+}
+
+impl<T> Queue<T> for ArrayQueue<T> 
+where T: Default + Clone {
+    
+    fn enqueue(&mut self, x: T) {
+        ArrayQueue::add(self, 0, x)
+    }
+
+    fn dequeue(&mut self) -> Option<T> {
+        Some(ArrayQueue::remove(self, 0))
     }
 }
 

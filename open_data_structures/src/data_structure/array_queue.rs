@@ -1,5 +1,11 @@
-use crate::interface::{list::List, queue::Queue};
+use crate::interface::queue::Queue;
 
+/// Queueインタフェースの実装
+///
+/// resize()のコストを無視すると
+/// add(x), remove()の実行時間はO(1)
+/// 空のArrayQueueに対して任意のm個のadd(i,x)およびremove(i)からなる操作の列を実行する。
+/// このときreizeにかかる時間はO(m)
 struct ArrayQueue<T> {
     a: Box<[T]>, // 循環配列
     j: usize,    // 次に削除する要素を追跡するインデックス
@@ -25,23 +31,11 @@ impl<T: Default + Clone> ArrayQueue<T> {
     }
 }
 
-impl<T> List<T> for ArrayQueue<T>
+impl<T> Queue<T> for ArrayQueue<T>
 where
     T: Default + Clone,
 {
-    fn size(&self) -> usize {
-        self.n
-    }
-
-    fn get(&self, i: usize) -> Option<&T> {
-        self.a.get(i)
-    }
-
-    fn set(&mut self, i: usize, x: T) -> T {
-        std::mem::replace(&mut self.a[i], x)
-    }
-
-    fn add(&mut self, _i: usize, x: T) {
+    fn add(&mut self, x: T) {
         if self.n >= self.a.len() {
             self.resize();
         }
@@ -49,27 +43,14 @@ where
         self.n += 1;
     }
 
-    fn remove(&mut self, _i: usize) -> T {
+    fn remove(&mut self) -> Option<T> {
         let x = self.a[self.j].clone();
         self.j = (self.j + 1) % self.a.len();
         self.n -= 1;
         if self.a.len() >= 3 * self.n {
             self.resize();
         }
-        x
-    }
-}
-
-impl<T> Queue<T> for ArrayQueue<T>
-where
-    T: Default + Clone,
-{
-    fn enqueue(&mut self, x: T) {
-        ArrayQueue::add(self, 0, x)
-    }
-
-    fn dequeue(&mut self) -> Option<T> {
-        Some(ArrayQueue::remove(self, 0))
+        Some(x)
     }
 }
 
@@ -80,34 +61,22 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn test_resize() {
-        let mut array: ArrayQueue<i32> = ArrayQueue::new(1);
-        array.resize();
-        assert_eq!(array.a.len(), 1);
-        assert_eq!(array.n, 0);
-
-        array.add(0, 0);
-        assert_eq!(array.a.len(), 1);
-        assert_eq!(array.n, 1);
-    }
-
-    #[test]
     fn test_queue() {
         let mut array = ArrayQueue::new(6);
 
-        array.enqueue("0");
+        array.add("0");
         assert_eq!(array.a, vec!["0", "", "", "", "", ""].into_boxed_slice());
         assert_eq!(array.j, 0);
         assert_eq!(array.n, 1);
 
-        array.enqueue("1");
+        array.add("1");
         assert_eq!(array.a, vec!["0", "1", "", "", "", ""].into_boxed_slice());
         assert_eq!(array.j, 0);
         assert_eq!(array.n, 2);
 
-        array.enqueue("a");
-        array.enqueue("b");
-        array.enqueue("c");
+        array.add("a");
+        array.add("b");
+        array.add("c");
         assert_eq!(
             array.a,
             vec!["0", "1", "a", "b", "c", ""].into_boxed_slice()
@@ -115,8 +84,8 @@ mod tests {
         assert_eq!(array.j, 0);
         assert_eq!(array.n, 5);
 
-        array.dequeue();
-        array.dequeue();
+        array.remove();
+        array.remove();
         assert_eq!(
             array.a,
             vec!["0", "1", "a", "b", "c", ""].into_boxed_slice()
@@ -124,7 +93,7 @@ mod tests {
         assert_eq!(array.j, 2);
         assert_eq!(array.n, 3);
 
-        array.enqueue("d");
+        array.add("d");
         assert_eq!(
             array.a,
             vec!["0", "1", "a", "b", "c", "d"].into_boxed_slice()
@@ -132,7 +101,7 @@ mod tests {
         assert_eq!(array.j, 2);
         assert_eq!(array.n, 4);
 
-        array.enqueue("e");
+        array.add("e");
         assert_eq!(
             array.a,
             vec!["e", "1", "a", "b", "c", "d"].into_boxed_slice()
@@ -140,7 +109,7 @@ mod tests {
         assert_eq!(array.j, 2);
         assert_eq!(array.n, 5);
 
-        array.dequeue();
+        array.remove();
         assert_eq!(
             array.a,
             vec!["e", "1", "a", "b", "c", "d"].into_boxed_slice()
@@ -148,7 +117,7 @@ mod tests {
         assert_eq!(array.j, 3);
         assert_eq!(array.n, 4);
 
-        array.enqueue("f");
+        array.add("f");
         assert_eq!(
             array.a,
             vec!["e", "f", "a", "b", "c", "d"].into_boxed_slice()
@@ -156,7 +125,7 @@ mod tests {
         assert_eq!(array.j, 3);
         assert_eq!(array.n, 5);
 
-        array.enqueue("g");
+        array.add("g");
         assert_eq!(
             array.a,
             vec!["e", "f", "g", "b", "c", "d"].into_boxed_slice()
@@ -164,7 +133,7 @@ mod tests {
         assert_eq!(array.j, 3);
         assert_eq!(array.n, 6);
 
-        array.enqueue("h");
+        array.add("h");
         assert_eq!(
             array.a,
             vec!["b", "c", "d", "e", "f", "g", "h", "", "", "", "", ""].into_boxed_slice()
@@ -172,7 +141,7 @@ mod tests {
         assert_eq!(array.j, 0);
         assert_eq!(array.n, 7);
 
-        array.dequeue();
+        array.remove();
         assert_eq!(
             array.a,
             vec!["b", "c", "d", "e", "f", "g", "h", "", "", "", "", ""].into_boxed_slice()

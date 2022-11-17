@@ -1,4 +1,6 @@
 use crate::interface::list::List;
+
+/// 両端に対して追加と削除が効率的にできる
 struct ArrayDeque<T> {
     a: Box<[T]>,
     j: usize,
@@ -44,6 +46,14 @@ where
         std::mem::replace(&mut self.a[i], x)
     }
 
+    /// 要素を追加する
+    ///
+    /// iが小さい時(0に近いとき)とiが大きい時(nに近い時)に効率が良くなる
+    /// i < n/2の場合左にずらす、そうでないなら右にずらす
+    /// 移動する要素の数が高々 min{i, n-i}個に保証される
+    ///
+    /// ## 計算量
+    /// * O(1 + min{i,n-i})
     fn add(&mut self, i: usize, x: T) {
         if self.n >= self.a.len() {
             self.resize();
@@ -72,6 +82,12 @@ where
         self.n += 1;
     }
 
+    ///　要素を削除する
+    ///
+    /// i < n/2 の場合右にずらす、そうでない場合左にずらす
+    ///
+    /// ## 計算量
+    /// * O(1 + min{i,n-i})
     fn remove(&mut self, i: usize) -> T {
         let x = self.a[(self.j + i) % self.a.len()].clone();
 

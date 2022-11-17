@@ -98,3 +98,62 @@ where
         x
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_list() {
+        let mut array = ArrayDeque::new(12);
+
+        array.add(0, "a");
+        array.add(1, "b");
+        array.add(2, "c");
+        array.add(3, "d");
+        array.add(4, "e");
+        array.add(5, "f");
+        array.add(6, "g");
+        array.add(7, "h");
+        assert_eq!(
+            array.a,
+            vec!["a", "b", "c", "d", "e", "f", "g", "h", "", "", "", ""].into_boxed_slice()
+        );
+        assert_eq!(array.j, 0);
+        assert_eq!(array.n, 8);
+
+        array.remove(2);
+        assert_eq!(
+            array.a,
+            vec!["a", "a", "b", "d", "e", "f", "g", "h", "", "", "", ""].into_boxed_slice()
+        );
+        assert_eq!(array.j, 1);
+        assert_eq!(array.n, 7);
+
+        array.add(4, "x");
+        assert_eq!(
+            array.a,
+            vec!["a", "a", "b", "d", "e", "x", "f", "g", "h", "", "", ""].into_boxed_slice()
+        );
+        assert_eq!(array.j, 1);
+        assert_eq!(array.n, 8);
+
+        array.add(3, "y");
+        assert_eq!(
+            array.a,
+            vec!["a", "b", "d", "y", "e", "x", "f", "g", "h", "", "", ""].into_boxed_slice()
+        );
+        assert_eq!(array.j, 0);
+        assert_eq!(array.n, 9);
+
+        array.add(3, "z");
+        assert_eq!(
+            array.a,
+            vec!["b", "d", "y", "z", "e", "x", "f", "g", "h", "", "", "a"].into_boxed_slice()
+        );
+        assert_eq!(array.j, 11);
+        assert_eq!(array.n, 10);
+    }
+}

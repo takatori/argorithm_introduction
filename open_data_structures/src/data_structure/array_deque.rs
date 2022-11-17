@@ -151,7 +151,7 @@ mod tests {
         array.add(3, "z");
         assert_eq!(
             array.a,
-            vec!["b", "d", "y", "z", "e", "x", "f", "g", "h", "", "", "a"].into_boxed_slice()
+            vec!["b", "d", "z", "y", "e", "x", "f", "g", "h", "", "", "a"].into_boxed_slice()
         );
         assert_eq!(array.j, 11);
         assert_eq!(array.n, 10);

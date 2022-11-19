@@ -13,7 +13,7 @@ where
     fn new(size: usize) -> Self {
         Self {
             front: ArrayStack::new(size),
-            back: ArrayStack::new(size),
+            back: ArrayStack::new(size / 2),
         }
     }
 
@@ -84,5 +84,50 @@ where
         };
         self.balance();
         x
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_list() {
+        let mut array = DualArrayDeque::new(5);
+        array.add(3, "a");
+        array.add(4, "b");
+        array.add(5, "c");
+        array.add(6, "d");
+        assert_eq!(array.front.a, vec!["", "", "", "a", "b"].into_boxed_slice());
+        assert_eq!(array.front.n, 2);
+        assert_eq!(array.back.a, vec!["c", "d", "", "", ""].into_boxed_slice());
+        assert_eq!(array.back.n, 2);
+        assert_eq!(array.size(), 4);
+
+        array.add(3, "x");
+        assert_eq!(array.front.a, vec!["", "", "", "a", "b"].into_boxed_slice());
+        assert_eq!(array.front.n, 2);
+        assert_eq!(array.back.a, vec!["c", "x", "d", "", ""].into_boxed_slice());
+        assert_eq!(array.back.n, 3);
+        assert_eq!(array.size(), 5);
+
+        array.add(4, "y");
+        assert_eq!(array.front.a, vec!["", "", "", "a", "b"].into_boxed_slice());
+        assert_eq!(array.front.n, 2);
+        assert_eq!(
+            array.back.a,
+            vec!["c", "x", "y", "d", ""].into_boxed_slice()
+        );
+        assert_eq!(array.back.n, 4);
+        assert_eq!(array.size(), 6);
+
+        array.remove(0);
+        assert_eq!(array.front.a, vec!["", "", "", "b", "c"].into_boxed_slice());
+        assert_eq!(array.front.n, 2);
+        assert_eq!(array.back.a, vec!["x", "y", "d", "", ""].into_boxed_slice());
+        assert_eq!(array.back.n, 3);
+        assert_eq!(array.size(), 5);
     }
 }

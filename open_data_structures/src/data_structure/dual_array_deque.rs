@@ -95,38 +95,44 @@ mod tests {
 
     #[test]
     fn test_list() {
-        let mut array = DualArrayDeque::new(5);
-        array.add(3, "a");
-        array.add(4, "b");
-        array.add(5, "c");
-        array.add(6, "d");
-        assert_eq!(array.front.a, vec!["", "", "", "a", "b"].into_boxed_slice());
-        assert_eq!(array.front.n, 2);
-        assert_eq!(array.back.a, vec!["c", "d", "", "", ""].into_boxed_slice());
-        assert_eq!(array.back.n, 2);
+        let mut array = DualArrayDeque::new(0);
+        array.add(0, "a");
+        array.add(1, "b");
+        array.add(2, "c");
+        array.add(3, "d");
+        assert_eq!(array.front.a, vec!["a", ""].into_boxed_slice());
+        assert_eq!(array.front.n, 1);
+        assert_eq!(array.back.a, vec!["b", "c", "d", ""].into_boxed_slice());
+        assert_eq!(array.back.n, 3);
         assert_eq!(array.size(), 4);
 
         array.add(3, "x");
-        assert_eq!(array.front.a, vec!["", "", "", "a", "b"].into_boxed_slice());
+        assert_eq!(array.front.a, vec!["b", "a", "", ""].into_boxed_slice());
         assert_eq!(array.front.n, 2);
-        assert_eq!(array.back.a, vec!["c", "x", "d", "", ""].into_boxed_slice());
+        assert_eq!(
+            array.back.a,
+            vec!["c", "x", "d", "", "", ""].into_boxed_slice()
+        );
         assert_eq!(array.back.n, 3);
         assert_eq!(array.size(), 5);
 
         array.add(4, "y");
-        assert_eq!(array.front.a, vec!["", "", "", "a", "b"].into_boxed_slice());
+        assert_eq!(array.front.a, vec!["b", "a", "", ""].into_boxed_slice());
         assert_eq!(array.front.n, 2);
         assert_eq!(
             array.back.a,
-            vec!["c", "x", "y", "d", ""].into_boxed_slice()
+            vec!["c", "x", "y", "d", "", ""].into_boxed_slice()
         );
         assert_eq!(array.back.n, 4);
         assert_eq!(array.size(), 6);
 
         array.remove(0);
-        assert_eq!(array.front.a, vec!["", "", "", "b", "c"].into_boxed_slice());
+        assert_eq!(array.front.a, vec!["c", "b", "", ""].into_boxed_slice());
         assert_eq!(array.front.n, 2);
-        assert_eq!(array.back.a, vec!["x", "y", "d", "", ""].into_boxed_slice());
+        assert_eq!(
+            array.back.a,
+            vec!["x", "y", "d", "", "", ""].into_boxed_slice()
+        );
         assert_eq!(array.back.n, 3);
         assert_eq!(array.size(), 5);
     }

@@ -30,7 +30,7 @@ impl<T> Node<T> {
 impl<T> Queue<T> for SList<T> {
     fn add(&mut self, x: T) {
         let mut node = Node::new(x);
-        node.next = self.head;
+        node.next = std::mem::replace(&mut self.head, None);
         self.head = Some(Box::new(node));
         if self.n == 0 {
             self.tail = Some(Box::new(node));
@@ -39,6 +39,11 @@ impl<T> Queue<T> for SList<T> {
     }
 
     fn remove(&mut self) -> Option<T> {
+        None
+    }
+
+    /*
+    fn remove(&mut self) -> Option<T> {
         if self.n == 0 {
             None
         } else {
@@ -46,5 +51,5 @@ impl<T> Queue<T> for SList<T> {
             self.head = self.head.map(|b| b.next);
             x
         }
-    }
+    }*/
 }

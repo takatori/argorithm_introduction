@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::interface::queue::Queue;
+use crate::interface::stack::Stack;
 
 #[derive(Debug)]
 pub struct SList<T> {
@@ -31,8 +32,8 @@ impl<T> Node<T> {
     }
 }
 
-impl<T> Queue<T> for SList<T> {
-    fn add(&mut self, x: T) {
+impl<T> Stack<T> for SList<T> {
+    fn push(&mut self, x: T) {
         let mut node = Node::new(x);
         node.next = std::mem::replace(&mut self.head, None);
         let node = Rc::new(RefCell::new(node));
@@ -43,7 +44,7 @@ impl<T> Queue<T> for SList<T> {
         self.n += 1;
     }
 
-    fn remove(&mut self) -> Option<T> {
+    fn pop(&mut self) -> Option<T> {
         if self.n == 0 {
             None
         } else {
@@ -52,7 +53,33 @@ impl<T> Queue<T> for SList<T> {
                 .as_ref()
                 .and_then(|rc| std::mem::replace(&mut rc.borrow_mut().next, None));
             self.head = next;
+            self.n -= 1;
+            if self.n == 0 {
+                self.tail = None;
+            }
             target.map(|rc| Rc::try_unwrap(rc).ok().unwrap().into_inner().x)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_stack() {
+        let mut list = SList::new();
+        for x in "abcde".chars() {
+            list.push(x);
+        }
+        assert_eq!(list.n, 5);
+
+        list.push('y');
+        assert_eq!(list.n, 6);
+
+        assert_eq!(list.pop(), Some('y'));
+        assert_eq!(list.n, 5);
     }
 }

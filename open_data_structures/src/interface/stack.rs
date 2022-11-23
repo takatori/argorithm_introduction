@@ -5,5 +5,5 @@ pub trait Stack<T> {
     fn push(&mut self, x: T);
 
     /// 最後に追加された値yをStackから削除し、yを返す
-    fn pop(&mut self) -> T;
+    fn pop(&mut self) -> Option<T>;
 }

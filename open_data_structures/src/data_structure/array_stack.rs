@@ -92,8 +92,8 @@ where
         ArrayStack::add(self, self.n, x);
     }
 
-    fn pop(&mut self) -> T {
-        ArrayStack::remove(self, self.n - 1)
+    fn pop(&mut self) -> Option<T> {
+        Some(ArrayStack::remove(self, self.n - 1)) // TODO: fix
     }
 }
 
@@ -126,11 +126,11 @@ mod tests {
         assert_eq!(array.a, vec![1, 2].into_boxed_slice());
         assert_eq!(array.n, 2);
 
-        assert_eq!(array.pop(), 2);
+        assert_eq!(array.pop(), Some(2));
         assert_eq!(array.a, vec![1, 2].into_boxed_slice());
         assert_eq!(array.n, 1);
 
-        assert_eq!(array.pop(), 1);
+        assert_eq!(array.pop(), Some(1));
         assert_eq!(array.a, vec![0].into_boxed_slice());
         assert_eq!(array.n, 0);
     }

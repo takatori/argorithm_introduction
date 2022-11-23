@@ -1,8 +1,11 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::interface::queue::Queue;
 
+#[derive(Debug)]
 pub struct SList<T> {
-    head: Option<Box<Node<T>>>,
-    tail: Option<Box<Node<T>>>,
+    head: Option<Rc<RefCell<Node<T>>>>,
+    tail: Option<Rc<RefCell<Node<T>>>>,
     n: usize,
 }
 
@@ -16,9 +19,10 @@ impl<T> SList<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct Node<T> {
     x: T,
-    next: Option<Box<Node<T>>>,
+    next: Option<Rc<RefCell<Node<T>>>>,
 }
 
 impl<T> Node<T> {
@@ -31,25 +35,24 @@ impl<T> Queue<T> for SList<T> {
     fn add(&mut self, x: T) {
         let mut node = Node::new(x);
         node.next = std::mem::replace(&mut self.head, None);
-        self.head = Some(Box::new(node));
+        let node = Rc::new(RefCell::new(node));
+        self.head = Some(Rc::clone(&node));
         if self.n == 0 {
-            self.tail = Some(Box::new(node));
+            self.tail = Some(Rc::clone(&node));
         }
         self.n += 1;
     }
 
     fn remove(&mut self) -> Option<T> {
-        None
-    }
-
-    /*
-    fn remove(&mut self) -> Option<T> {
         if self.n == 0 {
             None
         } else {
-            let x = self.head.map(|b| b.x);
-            self.head = self.head.map(|b| b.next);
-            x
+            let target = std::mem::replace(&mut self.head, None);
+            let next = target
+                .as_ref()
+                .and_then(|rc| std::mem::replace(&mut rc.borrow_mut().next, None));
+            self.head = next;
+            target.map(|rc| Rc::try_unwrap(rc).ok().unwrap().into_inner().x)
         }
-    }*/
+    }
 }

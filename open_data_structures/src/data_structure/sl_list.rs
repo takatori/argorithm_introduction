@@ -4,13 +4,13 @@ use crate::interface::queue::Queue;
 use crate::interface::stack::Stack;
 
 #[derive(Debug)]
-pub struct SList<T> {
+pub struct SLList<T> {
     head: Option<Rc<RefCell<Node<T>>>>,
     tail: Option<Rc<RefCell<Node<T>>>>,
     n: usize,
 }
 
-impl<T> SList<T> {
+impl<T> SLList<T> {
     fn new() -> Self {
         Self {
             head: None,
@@ -27,12 +27,12 @@ pub struct Node<T> {
 }
 
 impl<T> Node<T> {
-    fn new(x0: T) -> Self {
-        Self { x: x0, next: None }
+    fn new(x: T) -> Self {
+        Self { x, next: None }
     }
 }
 
-impl<T> Stack<T> for SList<T> {
+impl<T> Stack<T> for SLList<T> {
     fn push(&mut self, x: T) {
         let mut node = Node::new(x);
         node.next = std::mem::replace(&mut self.head, None);
@@ -62,6 +62,25 @@ impl<T> Stack<T> for SList<T> {
     }
 }
 
+impl<T> Queue<T> for SLList<T> {
+    fn add(&mut self, x: T) {
+        let node = Rc::new(RefCell::new(Node::new(x)));
+        if self.n == 0 {
+            self.head = Some(Rc::clone(&node));
+        } else {
+            self.tail
+                .as_ref()
+                .map(|rc| rc.borrow_mut().next = Some(Rc::clone(&node)));
+        }
+        self.tail = Some(Rc::clone(&node));
+        self.n += 1;
+    }
+
+    fn remove(&mut self) -> Option<T> {
+        self.pop()
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -70,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_stack() {
-        let mut list = SList::new();
+        let mut list = SLList::new();
         for x in "abcde".chars() {
             list.push(x);
         }
@@ -80,6 +99,21 @@ mod tests {
         assert_eq!(list.n, 6);
 
         assert_eq!(list.pop(), Some('y'));
+        assert_eq!(list.n, 5);
+    }
+
+    #[test]
+    fn test_queue() {
+        let mut list = SLList::new();
+        for x in "abcde".chars() {
+            list.add(x);
+        }
+        assert_eq!(list.n, 5);
+
+        list.add('x');
+        assert_eq!(list.n, 6);
+
+        assert_eq!(list.remove(), Some('a'));
         assert_eq!(list.n, 5);
     }
 }

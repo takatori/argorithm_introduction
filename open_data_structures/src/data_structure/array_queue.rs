@@ -13,7 +13,7 @@ struct ArrayQueue<T> {
 }
 
 impl<T: Default + Clone> ArrayQueue<T> {
-    fn new(size: usize) -> Self {
+    pub fn new(size: usize) -> Self {
         Self {
             a: vec![T::default(); size].into_boxed_slice(),
             j: 0,

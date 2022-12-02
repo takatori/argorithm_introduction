@@ -10,7 +10,7 @@ impl<T> DualArrayDeque<T>
 where
     T: Default + Clone,
 {
-    fn new(size: usize) -> Self {
+    pub fn new(size: usize) -> Self {
         Self {
             front: ArrayStack::new(size),
             back: ArrayStack::new(size / 2),

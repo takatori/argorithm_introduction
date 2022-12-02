@@ -11,7 +11,7 @@ impl<T> ArrayDeque<T>
 where
     T: Default + Clone,
 {
-    fn new(size: usize) -> Self {
+    pub fn new(size: usize) -> Self {
         Self {
             a: vec![T::default(); size].into_boxed_slice(),
             j: 0,

@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::fmt::{self, Debug};
 use std::{cell::RefCell, rc::Rc};
 
@@ -19,7 +18,7 @@ impl<T> Node<T> {
 impl<T: Debug> fmt::Debug for Node<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(n) = &self.next {
-            write!(f, "{:?} -> {:?}", self.x, n.borrow_mut().x)
+            write!(f, "{:?} -> {:?}", self.x, n.borrow_mut())
         } else {
             write!(f, "{:?}", self.x)
         }
@@ -144,5 +143,6 @@ mod tests {
 
         assert_eq!(list.remove(), Some('a'));
         assert_eq!(list.n, 5);
+        println!("{:?}", list);
     }
 }

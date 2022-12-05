@@ -1,8 +1,5 @@
-use std::{
-    borrow::Borrow,
-    cell::{Ref, RefCell},
-    rc::Rc,
-};
+use std::cell::{Ref, RefCell};
+use std::rc::Rc;
 
 use crate::interface::list::List;
 
@@ -33,18 +30,18 @@ pub struct DLList<T> {
 impl<T: Default> DLList<T> {
     pub fn new() -> Self {
         let dummy: Rc<RefCell<Node<T>>> = Rc::new(RefCell::new(Node::new()));
-        dummy.borrow_mut().next = Some(Rc::clone(&dummy));
-        dummy.borrow_mut().prev = Some(Rc::clone(&dummy));
+        dummy.as_ref().borrow_mut().next = Some(Rc::clone(&dummy));
+        dummy.as_ref().borrow_mut().prev = Some(Rc::clone(&dummy));
         Self { dummy, n: 0 }
     }
 
     pub fn get_node(&self, i: usize) -> Option<Rc<RefCell<Node<T>>>> {
         let mut p: Option<Rc<RefCell<Node<T>>>>;
         if i < self.n / 2 {
-            p = (*self.dummy).borrow().next.clone();
+            p = self.dummy.as_ref().borrow().next.clone();
             for _ in 0..i {
                 if let Some(n) = p {
-                    p = (*n).borrow().next.clone()
+                    p = n.as_ref().borrow().next.clone()
                 } else {
                     break;
                 }
@@ -53,7 +50,7 @@ impl<T: Default> DLList<T> {
             p = Some(self.dummy.clone());
             for _ in (i..self.n).rev() {
                 if let Some(n) = p {
-                    p = (*n).borrow().prev.clone();
+                    p = n.as_ref().borrow().prev.clone();
                 } else {
                     break;
                 }
@@ -64,24 +61,23 @@ impl<T: Default> DLList<T> {
 }
 
 impl<T: Default> List<T> for DLList<T> {
-
     fn size(&self) -> usize {
         self.n
     }
 
     fn get(&self, i: usize) -> Option<&T> {
-        self.get_node(i).as_deref()
+        self.get_node(i).map(|n| n.as_ref().borrow().x).as_ref()
     }
 
     fn set(&mut self, i: usize, x: T) -> T {
-        
+        let mut u = self.get_node(i);
+        let y = u.map(|rc| std::mem::replace(&mut rc.as_ref().borrow_mut().x, x));
+        y.unwrap()
     }
 
-    fn add(&mut self, i: usize, x: T) {
-        
-    }
+    fn add(&mut self, i: usize, x: T) {}
 
     fn remove(&mut self, i: usize) -> T {
-        
+        T::default()
     }
 }

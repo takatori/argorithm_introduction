@@ -1,13 +1,13 @@
 use std::cell::{Ref, RefCell};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use crate::interface::list::List;
 
 #[derive(Debug)]
 pub struct Node<T> {
     x: T,
-    prev: Option<Rc<RefCell<Node<T>>>>,
     next: Option<Rc<RefCell<Node<T>>>>,
+    prev: Option<Weak<RefCell<Node<T>>>>,    
 }
 
 impl<T: Default> Node<T> {
@@ -31,7 +31,7 @@ impl<T: Default> DLList<T> {
     pub fn new() -> Self {
         let dummy: Rc<RefCell<Node<T>>> = Rc::new(RefCell::new(Node::new()));
         dummy.as_ref().borrow_mut().next = Some(Rc::clone(&dummy));
-        dummy.as_ref().borrow_mut().prev = Some(Rc::clone(&dummy));
+        dummy.as_ref().borrow_mut().prev = Some(Rc::downgrade(&dummy));
         Self { dummy, n: 0 }
     }
 
@@ -50,7 +50,7 @@ impl<T: Default> DLList<T> {
             p = Some(self.dummy.clone());
             for _ in (i..self.n).rev() {
                 if let Some(n) = p {
-                    p = n.as_ref().borrow().prev.clone();
+                    p = n.as_ref().borrow().prev.clone().and_then(|w| w.upgrade());
                 } else {
                     break;
                 }
@@ -66,7 +66,7 @@ impl<T: Default> List<T> for DLList<T> {
     }
 
     fn get(&self, i: usize) -> Option<&T> {
-        self.get_node(i).map(|n| n.as_ref().borrow().x).as_ref()
+        self.get_node(i)
     }
 
     fn set(&mut self, i: usize, x: T) -> T {

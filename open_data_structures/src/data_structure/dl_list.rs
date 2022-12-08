@@ -1,13 +1,14 @@
-use std::cell::{Ref, RefCell};
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-use crate::interface::list::List;
+use crate::interface::clone_list::CloneList;
 
 #[derive(Debug)]
 pub struct Node<T> {
     x: T,
     next: Option<Rc<RefCell<Node<T>>>>,
-    prev: Option<Weak<RefCell<Node<T>>>>,    
+    prev: Option<Weak<RefCell<Node<T>>>>,
 }
 
 impl<T: Default> Node<T> {
@@ -27,7 +28,7 @@ pub struct DLList<T> {
     n: usize,
 }
 
-impl<T: Default> DLList<T> {
+impl<T: Default + Clone> DLList<T> {
     pub fn new() -> Self {
         let dummy: Rc<RefCell<Node<T>>> = Rc::new(RefCell::new(Node::new()));
         dummy.as_ref().borrow_mut().next = Some(Rc::clone(&dummy));
@@ -58,19 +59,37 @@ impl<T: Default> DLList<T> {
         }
         p
     }
+
+    pub fn add_before(&mut self, w: &Rc<RefCell<Node<T>>>, x: T) -> Rc<RefCell<Node<T>>> {
+        let mut u = Node::new();
+        u.x = x;
+        u.prev = w.as_ref().borrow_mut().prev.take();
+        u.next = Some(Rc::clone(w));
+        let mut u = Rc::new(RefCell::new(u));
+        u.as_ref()
+            .borrow_mut()
+            .next
+            .map(|rc| rc.as_ref().borrow_mut().prev = Some(Rc::downgrade(&u)));
+        u.as_ref().borrow_mut().prev.map(|weak| {
+            weak.upgrade()
+                .map(|rc| rc.as_ref().borrow_mut().next = Some(Rc::clone(&u)))
+        });
+        self.n += 1;
+        u
+    }
 }
 
-impl<T: Default> List<T> for DLList<T> {
+impl<T: Default + Clone> CloneList<T> for DLList<T> {
     fn size(&self) -> usize {
         self.n
     }
 
-    fn get(&self, i: usize) -> Option<&T> {
-        self.get_node(i)
+    fn get(&self, i: usize) -> Option<T> {
+        self.get_node(i).map(|rc| rc.as_ref().borrow().x.clone())
     }
 
     fn set(&mut self, i: usize, x: T) -> T {
-        let mut u = self.get_node(i);
+        let u = self.get_node(i);
         let y = u.map(|rc| std::mem::replace(&mut rc.as_ref().borrow_mut().x, x));
         y.unwrap()
     }

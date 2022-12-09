@@ -1,4 +1,4 @@
-use std::borrow::BorrowMut;
+use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
@@ -60,22 +60,26 @@ impl<T: Default + Clone> DLList<T> {
         p
     }
 
-    pub fn add_before(&mut self, w: &Rc<RefCell<Node<T>>>, x: T) -> Rc<RefCell<Node<T>>> {
-        let mut u = Node::new();
-        u.x = x;
-        u.prev = w.as_ref().borrow_mut().prev.take();
-        u.next = Some(Rc::clone(w));
-        let mut u = Rc::new(RefCell::new(u));
-        u.as_ref()
-            .borrow_mut()
-            .next
-            .map(|rc| rc.as_ref().borrow_mut().prev = Some(Rc::downgrade(&u)));
-        u.as_ref().borrow_mut().prev.map(|weak| {
-            weak.upgrade()
-                .map(|rc| rc.as_ref().borrow_mut().next = Some(Rc::clone(&u)))
+    pub fn add_before(&mut self, w: Option<Rc<RefCell<Node<T>>>>, x: T) -> Rc<RefCell<Node<T>>> {
+        let u = Rc::new(RefCell::new(Node::new()));
+        u.as_ref().borrow_mut().x = x;
+        u.as_ref().borrow_mut().prev = w.as_ref().and_then(|rc| rc.as_ref().borrow().prev.clone());
+        if let Some(p) = w.as_ref() {
+            p.as_ref().borrow_mut().prev = Some(Rc::downgrade(&u));
+        }
+        u.as_ref().borrow_mut().next = w;
+        u.as_ref().borrow().prev.as_ref().and_then(|p| {
+            p.upgrade()
+                .map(|p| p.as_ref().borrow_mut().next = Some(Rc::clone(&u)))
         });
         self.n += 1;
         u
+    }
+
+    pub fn remove_node(&mut self, w: Option<Rc<RefCell<Node<T>>>>) {
+        if let Some(p) = w.as_ref() {
+            p.as_ref().borrow().next.as_ref().and_then(|p| p.as_ref().borrow_mut().next = w.as_ref().borrow_mut())
+        }
     }
 }
 
@@ -94,7 +98,9 @@ impl<T: Default + Clone> CloneList<T> for DLList<T> {
         y.unwrap()
     }
 
-    fn add(&mut self, i: usize, x: T) {}
+    fn add(&mut self, i: usize, x: T) {
+        self.add_before(self.get_node(i), x);
+    }
 
     fn remove(&mut self, i: usize) -> T {
         T::default()

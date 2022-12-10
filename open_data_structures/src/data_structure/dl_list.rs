@@ -77,9 +77,14 @@ impl<T: Default + Clone> DLList<T> {
     }
 
     pub fn remove_node(&mut self, w: Option<Rc<RefCell<Node<T>>>>) {
-        if let Some(p) = w.as_ref() {
-            p.as_ref().borrow().next.as_ref().and_then(|p| p.as_ref().borrow_mut().next = w.as_ref().borrow_mut())
-        }
+        let prev = w.as_ref().and_then(|p| p.as_ref().borrow_mut().prev.take());
+        let next = w.and_then(|p| p.as_ref().borrow_mut().next.take());
+        prev.as_ref().and_then(|weak| {
+            weak.upgrade()
+                .map(|p| p.as_ref().borrow_mut().next = next.clone())
+        });
+        next.map(|p| p.as_ref().borrow_mut().prev = prev);
+        self.n -= 1;
     }
 }
 
@@ -103,6 +108,9 @@ impl<T: Default + Clone> CloneList<T> for DLList<T> {
     }
 
     fn remove(&mut self, i: usize) -> T {
-        T::default()
+        let node = self.get_node(i);
+        let x = node.as_ref().map(|rc| rc.as_ref().borrow().x.clone());
+        self.remove_node(node);
+        x.unwrap()
     }
 }

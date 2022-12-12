@@ -114,3 +114,33 @@ impl<T: Default + Clone> CloneList<T> for DLList<T> {
         x.unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_clone_list() {
+        let mut list = DLList::new();
+        list.add(0, 'a');
+        list.add(1, 'b');
+        list.add(2, 'c');
+        list.add(3, 'd');
+        list.add(4, 'e');
+        assert_eq!(list.size(), 5);
+        assert_eq!(list.get(0).unwrap(), 'a');
+        assert_eq!(list.get(1).unwrap(), 'b');
+        assert_eq!(list.get(2).unwrap(), 'c');
+        assert_eq!(list.get(3).unwrap(), 'd');
+        assert_eq!(list.get(4).unwrap(), 'e');
+
+        list.remove(3);
+        assert_eq!(list.size(), 4);
+        assert_eq!(list.get(0).unwrap(), 'a');
+        assert_eq!(list.get(1).unwrap(), 'b');
+        assert_eq!(list.get(2).unwrap(), 'c');
+        assert_eq!(list.get(3).unwrap(), 'e');
+    }
+}

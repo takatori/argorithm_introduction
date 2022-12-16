@@ -96,19 +96,19 @@ pub struct DLList<T> {
 
 impl<T: Default + Clone> DLList<T> {
     pub fn new() -> Self {
-        let dummy = StrongLink::new_link();
-        dummy.as_ref().borrow_mut().next = Some(Rc::clone(&dummy));
-        dummy.as_ref().borrow_mut().prev = Some(Rc::downgrade(&dummy));
+        let mut dummy = StrongLink::new_link();
+        dummy.set_next(Some(Rc::clone(&dummy)));
+        dummy.set_prev(Some(Rc::downgrade(&dummy)));
         Self { dummy, n: 0 }
     }
 
     pub fn get_link(&self, i: usize) -> Option<StrongLink<T>> {
         let mut p: Option<StrongLink<T>>;
         if i < self.n / 2 {
-            p = self.dummy.as_ref().borrow().next.clone();
+            p = self.dummy.get_next();
             for _ in 0..i {
                 if let Some(n) = p {
-                    p = n.as_ref().borrow().next.clone()
+                    p = n.get_next();
                 } else {
                     break;
                 }
@@ -117,7 +117,7 @@ impl<T: Default + Clone> DLList<T> {
             p = Some(self.dummy.clone());
             for _ in (i..self.n).rev() {
                 if let Some(n) = p {
-                    p = n.as_ref().borrow().prev.clone().and_then(|w| w.upgrade());
+                    p = n.get_prev().and_then(|w| w.upgrade());
                 } else {
                     break;
                 }

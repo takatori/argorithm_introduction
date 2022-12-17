@@ -68,15 +68,21 @@ impl<T: Default> Link<WeakLink<T>, T> for WeakLink<T> {
     }
 
     fn set_value(&mut self, x: T) {
-        self.upgrade().as_mut().map(|p| p.set_value(x));
+        if let Some(p) = self.upgrade().as_mut() {
+            p.set_value(x)
+        }
     }
 
     fn set_next(&mut self, next: Option<StrongLink<T>>) {
-        self.upgrade().as_mut().map(|p| p.set_next(next));
+        if let Some(p) = self.upgrade().as_mut() {
+            p.set_next(next)
+        }
     }
 
     fn set_prev(&mut self, prev: Option<WeakLink<T>>) {
-        self.upgrade().as_mut().map(|p| p.set_prev(prev));
+        if let Some(p) = self.upgrade().as_mut() {
+            p.set_prev(prev)
+        }
     }
 
     fn get_next(&self) -> Option<StrongLink<T>> {
@@ -130,24 +136,26 @@ impl<T: Default + Clone> DLList<T> {
         let mut new_node = Node::new_link();
         new_node.set_value(x);
         new_node.set_prev(target.as_ref().and_then(|p| p.get_prev()));
-        target
-            .as_mut()
-            .map(|link| link.set_prev(Some(Rc::downgrade(&new_node))));
+        if let Some(link) = target.as_mut() {
+            link.set_prev(Some(Rc::downgrade(&new_node)))
+        };
         new_node.set_next(target);
-        new_node.get_prev().as_mut().map(|p| {
-            p.set_next(Some(Rc::clone(&new_node)));
-        });
+        if let Some(p) = new_node.get_prev().as_mut() {
+            p.set_next(Some(Rc::clone(&new_node)))
+        };
         self.n += 1;
     }
 
     pub fn remove_node(&mut self, w: Option<Rc<RefCell<Node<T>>>>) {
-        let prev = w.as_ref().and_then(|p| p.as_ref().borrow_mut().prev.take());
-        let next = w.and_then(|p| p.as_ref().borrow_mut().next.take());
-        prev.as_ref().and_then(|weak| {
-            weak.upgrade()
-                .map(|p| p.as_ref().borrow_mut().next = next.clone())
-        });
-        next.map(|p| p.as_ref().borrow_mut().prev = prev);
+        let mut prev = w.as_ref().and_then(|p| p.get_prev());
+        let mut next = w.and_then(|p| p.get_next());
+
+        if let Some(weak) = prev.as_mut() {
+            weak.set_next(next.clone())
+        };
+        if let Some(p) = next.as_mut() {
+            p.set_prev(prev);
+        };
         self.n -= 1;
     }
 }

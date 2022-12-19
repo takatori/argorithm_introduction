@@ -1,35 +1,71 @@
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
 use crate::interface::clone_list::CloneList;
 
-type StrongLink<T> = Rc<RefCell<Node<T>>>;
-type WeakLink<T> = Weak<RefCell<Node<T>>>;
+// type StrongLink<T> = Rc<RefCell<Node<T>>>;
+// type WeakLink<T> = Weak<RefCell<Node<T>>>;
 
 #[derive(Debug)]
 pub struct Node<T> {
     x: T,
-    next: Option<StrongLink<T>>,
-    prev: Option<WeakLink<T>>,
+    next: Link<T>,
+    prev: WeakLink<T>
 }
 
 impl<T: Default> Node<T> {
     fn new() -> Self {
         Self {
             x: T::default(),
-            prev: None,
-            next: None,
+            prev: WeakLink::empty(),
+            next: Link::empty(),
         }
     }
 
-    fn new_link() -> StrongLink<T> {
-        Rc::new(RefCell::new(Self::new()))
+    fn get_link(self) -> Link<T> {
+        Link::new(self)
+    }
+
+}
+
+#[derive(Debug)]
+pub struct Link<T>(Option<Rc<RefCell<Node<T>>>>);
+
+impl <T> Link<T> {
+
+    fn empty() -> Self {
+        Self(None)
+    }
+
+    fn new(node: Node<T>) -> Self {
+        Link(Some(Rc::new(RefCell::new(node))))
+    }
+
+    fn next(&self) -> Option<Self> {
+        self.0.map(|rc| rc.as_ref().borrow().next)
     }
 }
 
+
+#[derive(Debug)]
+pub struct WeakLink<T>(Option<Weak<RefCell<Node<T>>>>); 
+
+impl <T> WeakLink<T> {
+
+    fn empty() -> Self {
+        Self(None)
+    }
+
+    fn new(link: &Link<T>) -> Self {
+        Self(link.0.map(|rc| Rc::downgrade(&rc)))
+    }
+}
+
+
+/*/
 pub trait Link<L, T> {
-    fn new_link() -> L;
-    fn set_value(&mut self, x: T);
+    fn new_link(node: Node<T>) -> L;
     fn set_next(&mut self, next: Option<StrongLink<T>>);
     fn set_prev(&mut self, prev: Option<WeakLink<T>>);
     fn get_prev(&self) -> Option<WeakLink<T>>;
@@ -37,12 +73,8 @@ pub trait Link<L, T> {
 }
 
 impl<T: Default> Link<StrongLink<T>, T> for StrongLink<T> {
-    fn new_link() -> StrongLink<T> {
-        Rc::new(RefCell::new(Node::new()))
-    }
-
-    fn set_value(&mut self, x: T) {
-        self.borrow_mut().x = x;
+    fn new_link(node: Node<T>) -> StrongLink<T> {
+        Rc::new(RefCell::new(node))
     }
 
     fn set_next(&mut self, next: Option<StrongLink<T>>) {
@@ -63,14 +95,9 @@ impl<T: Default> Link<StrongLink<T>, T> for StrongLink<T> {
 }
 
 impl<T: Default> Link<WeakLink<T>, T> for WeakLink<T> {
-    fn new_link() -> WeakLink<T> {
-        Rc::downgrade(&Rc::new(RefCell::new(Node::new())))
-    }
-
-    fn set_value(&mut self, x: T) {
-        if let Some(p) = self.upgrade().as_mut() {
-            p.set_value(x)
-        }
+    
+    fn new_link(node: Node<T>) -> WeakLink<T> {
+        Rc::downgrade(&Rc::new(RefCell::new(node)))
     }
 
     fn set_next(&mut self, next: Option<StrongLink<T>>) {
@@ -92,35 +119,37 @@ impl<T: Default> Link<WeakLink<T>, T> for WeakLink<T> {
     fn get_prev(&self) -> Option<WeakLink<T>> {
         self.upgrade().and_then(|p| p.get_prev())
     }
-}
+}*/
 /// 双方向連結リスト
 #[derive(Debug)]
 pub struct DLList<T> {
-    dummy: Rc<RefCell<Node<T>>>,
+    dummy: Link<T>,
     n: usize,
 }
 
 impl<T: Default + Clone> DLList<T> {
     pub fn new() -> Self {
-        let mut dummy = StrongLink::new_link();
-        dummy.set_next(Some(Rc::clone(&dummy)));
-        dummy.set_prev(Some(Rc::downgrade(&dummy)));
-        Self { dummy, n: 0 }
+        let dummy_node = Node::new();
+        let link = dummy_node.get_link();
+        dummy_node.prev = WeakLink::new(&link);
+        dummy_node.next = link;
+        Self { dummy: link, n: 0 }
     }
 
-    pub fn get_link(&self, i: usize) -> Option<StrongLink<T>> {
-        let mut p: Option<StrongLink<T>>;
+    pub fn get_link(&self, i: usize) -> Link<T> {
+        let mut p: Link<T>;
         if i < self.n / 2 {
-            p = self.dummy.get_next();
+            p = self.dummy;
             for _ in 0..i {
-                if let Some(n) = p {
+                p = p.next();
+                if let Some(n) = p.0 {
                     p = n.get_next();
                 } else {
                     break;
                 }
             }
         } else {
-            p = Some(self.dummy.clone());
+            p = self.dummy.0.clone();
             for _ in (i..self.n).rev() {
                 if let Some(n) = p {
                     p = n.get_prev().and_then(|w| w.upgrade());
@@ -133,8 +162,10 @@ impl<T: Default + Clone> DLList<T> {
     }
 
     pub fn add_before(&mut self, mut target: Option<StrongLink<T>>, x: T) {
-        let mut new_node = Node::new_link();
-        new_node.set_value(x);
+        let mut new = Node::new();
+        new.x = x;
+        
+        let mut new_node = StrongLink::new_link(new);
         new_node.set_prev(target.as_ref().and_then(|p| p.get_prev()));
         if let Some(link) = target.as_mut() {
             link.set_prev(Some(Rc::downgrade(&new_node)))
@@ -146,7 +177,7 @@ impl<T: Default + Clone> DLList<T> {
         self.n += 1;
     }
 
-    pub fn remove_node(&mut self, w: Option<Rc<RefCell<Node<T>>>>) {
+    pub fn remove_node(&mut self, w: Option<StrongLink<T>>) {
         let mut prev = w.as_ref().and_then(|p| p.get_prev());
         let mut next = w.and_then(|p| p.get_next());
 

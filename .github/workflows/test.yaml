@@ -1,0 +1,50 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          components: llvm-tools-preview
+
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+        env:
+          RUSTFLAGS: '-Cinstrument-coverage'
+
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features --no-fail-fast -- --nocapture
+
+      - uses: actions-rs/grcov@v0.1
+
+      - name: Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          # files: ./coverage1.xml,./coverage2.xml # optional
+          fail_ci_if_error: true
+          verbose: true

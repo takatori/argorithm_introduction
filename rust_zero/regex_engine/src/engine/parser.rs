@@ -5,6 +5,8 @@ use std::{
     mem::take,
 };
 
+use crate::helper::DynError;
+
 /// 抽象構文木を表現するための型
 #[derive(Debug)]
 pub enum AST {
@@ -112,7 +114,7 @@ fn fold_or(mut seq_or: Vec<AST>) -> Option<AST> {
 
 
 /// 正規表現を抽象構文木に変換
-pub fn parse(expr: &str) -> Result<AST, ParseError> {
+pub fn parse(expr: &str) -> Result<AST, DynError> {
 
     // 内部状態を表現するための型
     // Char状態: 文字列処理中
@@ -131,9 +133,9 @@ pub fn parse(expr: &str) -> Result<AST, ParseError> {
         match &state {
             ParseState::Char => {
                 match c {
-                    '+' => parse_plus_start_question(&mut seq, PSQ::Plus, i)?
-                    '*' => parse_plus_start_question(&mut seq, PSQ::Star, i)?
-                    '?' => parse_plus_start_question(&mut seq, PSQ::Question, i)?
+                    '+' => parse_plus_start_question(&mut seq, PSQ::Plus, i)?,
+                    '*' => parse_plus_start_question(&mut seq, PSQ::Star, i)?,
+                    '?' => parse_plus_start_question(&mut seq, PSQ::Question, i)?,
                     '(' => {
                         // 現在のコンテキストをスタックに保存し、
                         // 現在のコンテキストを空の状態にする

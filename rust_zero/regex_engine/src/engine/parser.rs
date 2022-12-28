@@ -112,10 +112,8 @@ fn fold_or(mut seq_or: Vec<AST>) -> Option<AST> {
     }
 }
 
-
 /// 正規表現を抽象構文木に変換
 pub fn parse(expr: &str) -> Result<AST, DynError> {
-
     // 内部状態を表現するための型
     // Char状態: 文字列処理中
     // Escapse状態: エスケープシーケンス処理中
@@ -167,14 +165,14 @@ pub fn parse(expr: &str) -> Result<AST, DynError> {
                     '|' => {
                         if seq.is_empty() {
                             // "||", "(|abc)"などと、式がからの場合はエラー
-                            return Err(Box::new(ParseError::NoPrev(i)))
+                            return Err(Box::new(ParseError::NoPrev(i)));
                         } else {
                             let prev = take(&mut seq);
                             seq_or.push(AST::Seq(prev));
                         }
                     }
                     '\\' => state = ParseState::Escapse,
-                    _ => seq.push(AST::Char(c))
+                    _ => seq.push(AST::Char(c)),
                 }
             }
             ParseState::Escapse => {

@@ -25,6 +25,33 @@ impl std::fmt::Display for Instruction {
     }
 }
 
+/// 正規表現をパースしてコードを生成し、
+/// ASTと命令列を標準出力に表示
+///
+/// # 利用例
+///
+/// ```
+/// use regex;
+/// regex::print("abc|(de|cd)+");
+///
+/// # 返り値
+///
+/// 入力された正規表現にエラーがあったり、内部的な実装エラーがある場合はErrを返す
+/// ```
+pub fn print(expr: &str) -> Result<(), DynError> {
+    println!("expr: {expr}");
+    let ast = parser::parse(expr)?;
+    println!("AST: {:?}", ast);
+
+    println!();
+    println!("code:");
+    let code = codegen::get_code(&ast)?;
+    for (n, c) in code.iter().enumerate() {
+        println!("{:>04}: {c}", n);
+    }
+    Ok(())
+}
+
 /// 正規表現と文字列をマッチング
 ///
 /// # 利用例

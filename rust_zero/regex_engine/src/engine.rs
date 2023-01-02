@@ -31,8 +31,9 @@ impl std::fmt::Display for Instruction {
 /// # 利用例
 ///
 /// ```
-/// use regex;
-/// regex::print("abc|(de|cd)+");
+/// use regex_engine::engine;
+/// engine::print("abc|(de|cd)+");
+/// ```
 ///
 /// # 返り値
 ///
@@ -57,8 +58,9 @@ pub fn print(expr: &str) -> Result<(), DynError> {
 /// # 利用例
 ///
 /// ```
-/// use regex;
-/// regex::do_matching("abc|(de|cd)+", "decddede", true);
+/// use regex_engine::engine;
+/// engine::do_matching("abc|(de|cd)+", "decddede", true);
+/// ```
 ///
 /// # 引数
 ///

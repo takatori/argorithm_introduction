@@ -147,13 +147,378 @@ impl Shell {
 }
 
 fn spawn_sig_handler(tx: Sender<WorkerMsg>) -> Result<(), DynError> {
-    // SIGCHLD: 子プロセスの状態変化時に通知される    
+    // SIGCHLD: 子プロセスの状態変化時に通知される
     let mut signals = Signals::new(&[SIGINT, SIGTSTP, SIGCHLD])?;
     thread::spawn(move || {
         for sig in signals.forever() {
             // シグナルを受信しworkerスレッドに転送
-            tx.send(WorkerMsg::Signal(sig)).unwrap();            
+            tx.send(WorkerMsg::Signal(sig)).unwrap();
         }
     });
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum ProcState {
+    Run,  // 実行中
+    Stop, // 停止中
+}
+
+#[derive(Debug, Clone)]
+struct ProcInfo {
+    state: ProcState, // 実行状態
+    pgid: Pid,        // プロセスグループID
+}
+
+#[derive(Debug)]
+struct Worker {
+    exit_val: i32,                                     // 終了コード
+    fg: Option<Pid>,                                   // フォアグラウンドのプロセスグループID
+    jobs: BTreeMap<usize, (Pid, String)>, // ジョブIDから(プロセスグループID, 実行コマンド)へのマップ
+    pgid_to_pids: HashMap<Pid, (usize, HashSet<Pid>)>, // プロセスグループIDから(ジョブID, 実行コマンド)へのマップ
+    pid_to_info: HashMap<Pid, ProcInfo>,               // プロセスIDからプロセスグループIDへのマップ
+    shell_pgid: Pid,                                   // シェルのプロセスグループID
+}
+
+impl Worker {
+    fn new() -> Self {
+        Worker {
+            exit_val: 0,
+            fg: None, // フォアグラウンドはシェル
+            jobs: BTreeMap::new(),
+            pgid_to_pids: HashMap::new(),
+            pid_to_info: HashMap::new(),
+            // シェルのプロセスグループIDを取得
+            // tcgetpgrpという、同名のCライブラリ関数が存在し、
+            // libc::STDIN_FILENOというファイルディスクリプタ
+            // に関連付けられた、フォアグラウンドのプロセスグループIDを取得する。
+            // ここでは、つまりシェルのプロセスグループIDを取得している
+            // 自身のプロセスグループIDを取得するために、getpgidシステムコールも利用できるが、
+            // tcgetpgrpを利用すると、シェルがフォアグラウンドであるかも検査できるため、こちらを利用している
+            shell_pgid: tcgetpgrp(libc::STDIN_FILENO).unwrap(),
+        }
+    }
+
+    /// workerスレッドを起動
+    fn spawn(mut self, worker_rx: Receiver<WorkerMsg>, shell_tx: SyncSender<ShellMsg>) {
+        thread::spawn(move || {
+            for msg in worker_rx.iter() {
+                match msg {
+                    WorkerMsg::Cmd(line) => {
+                        match parse_cmd(&line) {
+                            Ok(cmd) => {
+                                // 組み込みコマンドを実行
+                                // 組み込みコマンドとは、シェル内部のコマンドのこと
+                                if self.build_in_cmd(&cmd, &shell_tx) {
+                                    // 組み込みコマンドならworker_rxから取得
+                                    continue;
+                                }
+
+                                // 組み込みコマンドでない場合は、外部プログラムを実行
+                                if !self.spawn_child(&line, &cmd) {
+                                    // 子プロセス生成に失敗した場合、シェルからの入力を再開
+                                    shell_tx.send(ShellMsg::Continue(self.exit_val)).unwrap();
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("ZeroSh: {e}");
+                                // コマンドのパースに失敗した場合は入力を再開するためmainスレッドに通知
+                                shell_tx.send(ShellMsg::Continue(self.exit_val)).unwrap();
+                            }
+                        }
+                    }
+                    WorkerMsg::Signal(SIGCHILD) => {
+                        self.wait_child(&shell_tx); // 子プロセスの状態変化管理
+                    }
+                    _ => (), // 無視
+                }
+            }
+        });
+    }
+
+    /// 組み込みコマンドの場合はtrueを返す
+    fn build_in_cmd(&mut self, cmd: &[(&str, Vec<&str>)], shell_tx: &SyncSender<ShellMsg>) -> bool {
+        if cmd.len() > 1 {
+            return false; // 組み込みコマンドのパイプは非対応なのでエラー
+        }
+
+        match cmd[0].0 {
+            "exit" => self.run_exit(&cmd[0].1, shell_tx),
+            "jobs" => self.run_jobs(shell_tx),
+            "fg" => self.run_fg(&cmd[0].1, shell_tx),
+            "cd" => self.run_cd(&cmd[0].1, shell_tx),
+            _ => false,
+        }
+    }
+
+    /// eixtコマンドを実行
+    fn run_exit(&mut self, args: &[&str], shell_tx: &SyncSender<ShellMsg>) -> bool {
+        // バックエンドで実行中のジョブがある場合は終了しない
+        if !self.jobs.is_empty() {
+            eprintln!("ジョブが実行中なので終了できません");
+            self.exit_val = 1; //　失敗
+            shell_tx.send(ShellMsg::Continue(self.exit_val)).unwrap(); // シェルを再開
+            return true;
+        }
+
+        // 終了コードを取得
+        let exit_val = if let Some(s) = args.get(1) {
+            if let Ok(n) = (*s).parse::<i32>() {
+                n
+            } else {
+                // 終了コードが整数ではない
+                eprintln!("{s}は不正な引数です");
+                self.exit_val = 1; // 失敗
+                shell_tx.send(ShellMsg::Continue(self.exit_val)).unwrap(); // シェルを再開
+                return true;
+            }
+        } else {
+            self.exit_val
+        };
+
+        shell_tx.send(ShellMsg::Quit(self.exit_val)).unwrap(); // シェルを終了
+        true
+    }
+
+    /// fgコマンドを実行
+    fn run_fg(&mut self, args: &[&str], shell_tx: &SyncSender<ShellMsg>) -> bool {
+        self.exit_val = 1; // とりあえず失敗に設定
+
+        // 引数をチェック
+        if args.len() < 2 {
+            eprintln!("usage: fg 数字");
+            shell_tx.send(ShellMsg::Continue(self.exit_val)).unwrap();
+            return true;
+        }
+
+        // ジョブIDを取得
+        if let Ok(n) = args[1].parse::<usize>() {
+            if let Some((pgid, cmd)) = self.jobs.get(&n) {
+                eprintln!("{n} 再開\t{cmd}");
+
+                // フォアグラウンドプロセスに設定
+                self.fg = Some(*pgid);
+                // tcsetpgrpはファイルディスクリプタとプロセスグループIDを受け取り、
+                // そのファイルディスクリプタに関連付けられたセッションの
+                // フォアグラウンドプロセスグループを指定されたプロセスグループとする
+                tcsetpgrp(libc::STDIN_FILENO, *pgid).unwrap();
+
+                // ジョブの実行を再開
+                // 引数で指定したプロセスグループに対してSIGCONTシグナルを送信する
+                // 停止中のプロセスがSIGCONTを受信すると、実行が再開される
+                // フォアグラウンドプロセスを変更した場合は、シェルの読み込みは再開しない
+                killpg(*pgid, Signal::SIGCONT).unwrap();
+                return true;
+            }
+        }
+
+        // 失敗
+        eprintln!("{}というジョブは見つかりませんでした。", args[1]);
+        shell_tx.send(ShellMsg::Continue(self.exit_val)).unwrap(); // シェルを再開
+        true
+    }
+
+    /// jobsコマンドを実行
+    ///
+    /// 現在シェルが管理して実行しているジョブ一覧を表示する
+    fn run_jobs(&mut self, shell_tx: &SyncSender<ShellMsg>) -> bool {
+        true // TODO
+    }
+
+    /// cdコマンドを実行
+    fn run_cd(&mut self, args: &[&str], shell_tx: &SyncSender<ShellMsg>) -> bool {
+        true // TODO
+    }
+
+    /// 子プロセスを生成。失敗した場合はシェルからの入力を再開させる必要あり。
+    fn spawn_child(&mut self, line: &str, cmd: &[(&str, Vec<&str>)]) -> bool {
+        assert_ne!(cmd.len(), 0); // コマンドが空でないか検査
+
+        // ジョブIDを取得
+        let job_id = if let Some(id) = self.get_new_job_id() {
+            id
+        } else {
+            eprintln!("ZeroSh: 管理可能なジョブの最大値に到達");
+            return false;
+        };
+
+        if cmd.len() > 2 {
+            eprintln!("ZeroSh: 3つ以上のコマンドによるパイプはサポートしていません");
+            return false;
+        }
+
+        let mut input = None; // 2つ目のプロセスの標準入力
+        let mut output = None; // １つ目のプロセスの標準出力
+        if cmd.len() == 2 {
+            // パイプを作成
+            let p = pipe().unwrap();
+            input = Some(p.0);
+            output = Some(p.1);
+        }
+
+        // パイプを閉じる関数を定義
+        let cleanup_pipe = CleanuUp {
+            f: || {
+                if let Some(fd) = input {
+                    syscall(|| unistd::close(fd)).unwrap();
+                }
+                if let Some(fd) = output {
+                    syscall(|| unistd::close(fd)).unwrap();
+                }
+            },
+        };
+
+        let pgid;
+
+        // １つ目のプロセスを生成
+        //
+        match fork_exec(Pid::from_raw(0), cmd[0].0, &cmd[0].1, None, output) {
+            Ok(child) => {
+                pgid = child;
+            }
+            Err(e) => {
+                eprintln!("ZeroSh: プロセス生成エラー: {e}");
+                return false;
+            }
+        }
+
+        // プロセス、ジョブの情報を追加
+        let info = ProcInfo {
+            state: ProcState::Run,
+            pgid,
+        };
+        let mut pids = HashMap::new();
+        pids.insert(pgid, info.clone()); // 1つ目のプロセスの情報
+
+        // 2つ目のプロセスを生成
+        if cmd.len() == 2 {
+            match fork_exec(pgid, cmd[1].0, &cmd[1].1, input, None) {
+                Ok(child) => {
+                    // 2つ目のプロセスの情報
+                    pids.insert(child, info);
+                }
+                Err(e) => {
+                    eprintln!("ZeroSh: プロセス生成エラー: {e}");
+                    return false;
+                }
+            }
+        }
+
+        std::mem::drop(cleanup_pipe); // パイプをクローズ。ここでクローズしても、子プロセスでは残っている
+
+        // ジョブ情報を追加して子プロセスをフォアグラウンドプロセスグループにする
+        self.fg = Some(pgid);
+        self.insert_job(job_id, pgid, pids, line);
+        tcsetpgrp(libc::STDIN_FILENO, pgid).unwrap();
+
+        true
+    }
+}
+
+type CmdResult<'a> = Result<Vec<(&'a str, Vec<&'a str>)>, DynError>;
+
+/// コマンドをパース
+fn parse_cmd(line: &str) -> CmdResult {
+    let parsed_cmds = vec![];
+
+    for cmd in line.split('|') {
+        let cmd = cmd.trim();
+        if cmd.is_empty() {
+            return Err();
+        }
+        let cmd_and_options: Vec<&str> = cmd.split_whitespace().collect();
+        let cmd = cmd_and_options[0];
+        let options = cmd_and_options[1..].to_vec();
+        parsed_cmds.push((cmd, options))
+    }
+    Ok(parsed_cmds)
+}
+
+/// プロセスグループIDを指定してfork & exec
+/// pgidが0の場合は子プロセスのプロセスIDが、プロセスグループIDとなる
+///
+/// - inputがSome(fd)の場合は、標準入力をfdと設定
+/// - outputがSome(fd)の場合は、標準出力をfdと設定
+fn fork_exec(
+    pgid: Pid,
+    filename: &str,
+    args: &[&str],
+    input: Option<i32>,
+    output: Option<i32>,
+) -> Result<Pid, DynError> {
+    let filename = CString::new(filename).unwrap();
+    let args: Vec<CString> = args.iter().map(|s| CString::new(*s).unwrap()).collect();
+
+    match syscall(|| unsafe { fork() })? {
+        // forkを呼び出し子プロセスを生成
+        ForkResult::Parent { child, .. } => {
+            // 子プロセスのプロセスグループIDをpgidに設定
+            setpgid(child, pgid).unwrap();
+            Ok(child)
+        }
+        ForkResult::Child => {
+            // 子プロセスのプロセスグループIDをpgidに設定
+            // setpgidの第一引数を0とすると、自プロセスのプロセスグループIDにpgid設定される
+            // 親と子の両方でsetpgidを呼び出している理由は、どちらが先に実行されるか決定不能であり、
+            // 確実にプロセスグループIDを設定するためである
+            setpgid(Pid::from_raw(0), pgid).unwrap();
+
+            // 標準入出力を引数で与えられたものに置き換える
+            // nix::unistd::dup2はシステムコールのラッパで、
+            // 第一引数に元となるファイルディスクリプタを、
+            // 第二引数に置き換え先のファイルディスクリプタを指定する
+            // 第二引数に示すファイルディスクリプタがすでに使われていた場合はクローズする
+            if let Some(infd) = input {
+                syscall(|| dup2(infd, libc::STDIN_FILENO)).unwrap();
+            }
+            if let Some(outfd) = output {
+                syscall(|| dup2(outfd, libc::STDOUT_FILENO)).unwrap();
+            }
+
+            // 標準入出力と標準エラー出力以外のファイルディスクリプタは不要なので
+            // signal_hookで利用されるUnixドメインソケットとpipeをクローズ
+            for i in 3..=6 {
+                let _ = syscall(|| unistd::close(i));
+            }
+
+            // 実行ファイルをメモリに読み込み
+            // nix::unistd::execvp関数を呼び足、実行ファイルを実行
+            // execvpも同名のシステムコールのラッパであり、
+            // 第一引数に実行ファイルへのパスを、第２引数にコマンドライン引数を指定する
+            match execvp(&filename, &args) {
+                Err(_) => {
+                    // 標準エラー出力への書き込みにprintln!ではなく、write!を利用しているのは、
+                    // fork後に安全に利用可能なシステムコールは限定されており、
+                    // 内部でメモリ確保を行うprintln!の利用は避けるべきだからである。
+                    // 詳細はman signal-safety
+                    // https://qiita.com/rarul/items/090920b850acc4b7e910
+                    unistd::write(libc::STDERR_FILENO, "不明なコマンドを実行\n".as_bytes()).ok();
+                    exit(1);
+                }
+                Ok(_) => unreachable!(),
+            }
+        }
+    }
+}
+
+/// ドロップ時にクロージャfを呼び出す型
+///
+/// フィールドfに示されるクロージャをドロップ時に実行するのみ
+/// ファイルディスクリプタのクローズ処理に用いる
+/// Rustはメモリなどのリソース解放は、ライブラリやコンパイラが自動で行ってくれるが
+/// 自前でシステムコールを用いてパイプを作成した場合には、プログラマ自らが行う必要がある
+struct CleanuUp<F>
+where
+    F: Fn(),
+{
+    f: F,
+}
+
+impl<F> Drop for CleanuUp<F>
+where
+    F: Fn(),
+{
+    fn drop(&mut self) {
+        (self.f)()
+    }
 }

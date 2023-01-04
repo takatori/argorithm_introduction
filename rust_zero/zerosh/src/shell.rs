@@ -228,6 +228,7 @@ impl Worker {
                         }
                     }
                     WorkerMsg::Signal(SIGCHILD) => {
+                        // SIGCHLDは、子プロセスの終了、停止時に親プロセスへ通知されるシグナル
                         self.wait_child(&shell_tx); // 子プロセスの状態変化管理
                     }
                     _ => (), // 無視
@@ -416,10 +417,107 @@ impl Worker {
 
     /// 子プロセスの状態変化を管理
     fn wait_child(&mut self, shell_tx: &SyncSender<ShellMsg>) {
+        // waitpidで検知する状態を設定するフラグ
+        //
         // WUNTRACED: 子プロセスの停止
-        // WNOHANG: ブロックしない
         // WCONTINUED: 実行再開
-        let flag = Some(WaitPidFlag::WUNTRACED | )
+        // WNOHANG: ブロックしない(waitpid呼び出しがノンブロッキングとなる)
+        //
+        // ブロッキング呼び出しを行うと、子プロセスに状態変化がない場合waitpidの呼び出しは停止し、
+        // それを呼び出したスレッドも子プロセスの状態変化が起きるまで待機状態となる
+        // ノンブロッキングとすると、waitpidの呼び出し時点で子プロセスの状態変化がない場合は即座に返る
+        // こうすることで、workerスレッドはシグナルとコマンドライン実行の両方を並行に処理できる
+        let flag = Some(WaitPidFlag::WUNTRACED | WaitPidFlag::WNOHANG | WaitPidFlag::WCONTINUED);
+        loop {
+            // waitpidで子プロセスの状態変化を検知
+            // 第一引数にプロセスIDを指定すると特定の子プロセスのみ指定可能で、
+            // -1を指定した場合は任意の子プロセスの状態変化を検知する
+            //
+            // waitpidは終了したプロセスのリソース解放も行い、これを忘れるとゾンビプロセスとなり無駄にリソースを消費してしまう
+            match syscall(|| waitpid(Pid::from_raw(-1), flag)) {
+                // プロセスが終了
+                Ok(WaitStatus::Exited(pid, status)) => {
+                    self.exit_val = status; // 終了コードを保存
+                    self.process_term(pid, shell_tx);
+                }
+                // プロセスがシグナルにより終了
+                Ok(WaitStatus::Signaled(pid, sig, core)) => {
+                    eprint!(
+                        "\nZeroSh: 子プロセスがシグナルにより終了{}: pid = {pid}, signal = {sig}",
+                        if core { " (コアダンプ) " } else { "" }
+                    );
+                    self.exit_val = sig as i32 + 128; // 終了コードを保持
+                    self.process_term(pid, shell_tx);
+                }
+                // プロセスが停止
+                Ok(WaitStatus::Stopped(pid, _sig)) => self.process_stop(pid, shell_tx),
+                // プロセスが実行再開
+                Ok(WaitStatus::Continued(pid)) => self.process_continue(pid),
+                // waitすべき子プロセスはいない
+                Ok(WaitStatus::StillAlive) => return,
+                // そもそも子プロセスがいない
+                Err(nix::Error::ECHILD) => return,
+                Err(e) => {
+                    eprintln!("\nZeroSh: waitが失敗: {e}");
+                    exit(1); // 致命的なエラーとしてシェルを終了させる
+                }
+                #[cfg(any(target_os = "linux", target_os = "android"))]
+                Ok(WaitStatus::PtraceEvent(pid, _, _) | WaitStatus::PtraceSyscall(pid)) => {
+                    self.process_stop(pid, shell_tx)
+                }
+            }
+        }
+    }
+
+    /// プロセスの終了処理
+    fn process_term(&mut self, pid: Pid, shell_tx: &SyncSender<ShellMsg>) {
+        // プロセスのIDを削除し、必要ならフォアグラウンドプロセスをシェルに設定
+        if let Some((job_id, pgid)) = self.remove_pid(pid) {
+            self.manage_job(job_id, pgid, shell_tx);
+        }
+    }
+
+    /// プロセスの停止処理
+    fn process_stop(&mut self, pid: Pid, shell_tx: &SyncSender<ShellMsg>) {
+        self.set_pid_state(pid, ProcState::Stop); // プロセスを停止中に設定
+        let pgid = self.pid_to_info.get(&pid).unwrap().pgid; // プロセスグループIDを取得
+        let job_id = self.pgid_to_pids.get(&pgid).unwrap().0; // ジョブIDを取得
+        self.manage_job(job_id, pgid, shell_tx); // 必要ならフォアグラウンドプロセスをシェルに設定
+    }
+
+    /// プロセスの再開処理
+    fn process_continue(&mut self, pid: Pid, shell_tx: &SyncSender<ShellMsg>) {
+        self.set_pid_state(pid, ProcState::Run);
+    }
+
+    /// ジョブの管理。引数には変化のあったジョブとプロセスグループを指定
+    ///
+    /// - フォアグラウンドプロセスが空の場合、シェルをフォアグラウンドに設定
+    /// - フォアグラウンドプロセスがすべて停止中の場合、シェルをフォアグラウンドに設定
+    fn manage_job(&mut self, job_id: usize, pgid: Pid, shell_tx: &SyncSender<ShellMsg>) {
+        let is_fg = self.fg.map_or(false, |x| pgid == x); // フォアグラウンドのプロセスか？
+        let line = &self.jobs.get(&job_id).unwrap().1;
+        if is_fg {
+            // 状態が変化したプロセスはフォアグラウンドに設定
+            if self.is_group_empty(pgid).unwrap() {
+                // フォアグラウンドプロセスが空の場合
+                // ジョブ情報を削除してシェルをフォアグラウンドに設定
+                eprintln!("[{job_id}] 終了\t{line}");
+                self.remove_job(job_id);
+                self.set_shell_fg(shell_tx);
+            } else if self.is_group_stop(pgid).unwrap() {
+                // フォアグラウンドプロセスがすべて停止中の場合
+                // シェルをフォアグラウンドに設定
+                eprintln!("[{job_id}] 停止\t{line}");
+                self.set_shell_fg(shell_tx);
+            }
+        } else {
+            // プロセスグループが殻の場合、ジョブ情報を削除
+            if self.is_group_empty(pgid).unwrap() {
+                eprintln!("[{job_id}] 終了\t{line}");
+                self.remove_job(job_id);
+            }
+        }
     }
 }
 

@@ -413,6 +413,14 @@ impl Worker {
 
         true
     }
+
+    /// 子プロセスの状態変化を管理
+    fn wait_child(&mut self, shell_tx: &SyncSender<ShellMsg>) {
+        // WUNTRACED: 子プロセスの停止
+        // WNOHANG: ブロックしない
+        // WCONTINUED: 実行再開
+        let flag = Some(WaitPidFlag::WUNTRACED | )
+    }
 }
 
 type CmdResult<'a> = Result<Vec<(&'a str, Vec<&'a str>)>, DynError>;

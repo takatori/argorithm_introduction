@@ -175,8 +175,8 @@ struct Worker {
     exit_val: i32,                                     // 終了コード
     fg: Option<Pid>,                                   // フォアグラウンドのプロセスグループID
     jobs: BTreeMap<usize, (Pid, String)>, // ジョブIDから(プロセスグループID, 実行コマンド)へのマップ
-    pgid_to_pids: HashMap<Pid, (usize, HashSet<Pid>)>, // プロセスグループIDから(ジョブID, 実行コマンド)へのマップ
-    pid_to_info: HashMap<Pid, ProcInfo>,               // プロセスIDからプロセスグループIDへのマップ
+    pgid_to_pids: HashMap<Pid, (usize, HashSet<Pid>)>, // プロセスグループIDから(ジョブID, プロセスID)へのマップ
+    pid_to_info: HashMap<Pid, ProcInfo>,               // プロセスIDからプロセス情報へのマップ
     shell_pgid: Pid,                                   // シェルのプロセスグループID
 }
 
@@ -452,7 +452,7 @@ impl Worker {
                 // プロセスが停止
                 Ok(WaitStatus::Stopped(pid, _sig)) => self.process_stop(pid, shell_tx),
                 // プロセスが実行再開
-                Ok(WaitStatus::Continued(pid)) => self.process_continue(pid),
+                Ok(WaitStatus::Continued(pid)) => self.process_continue(pid, shell_tx),
                 // waitすべき子プロセスはいない
                 Ok(WaitStatus::StillAlive) => return,
                 // そもそも子プロセスがいない
@@ -495,11 +495,15 @@ impl Worker {
     /// - フォアグラウンドプロセスが空の場合、シェルをフォアグラウンドに設定
     /// - フォアグラウンドプロセスがすべて停止中の場合、シェルをフォアグラウンドに設定
     fn manage_job(&mut self, job_id: usize, pgid: Pid, shell_tx: &SyncSender<ShellMsg>) {
-        let is_fg = self.fg.map_or(false, |x| pgid == x); // フォアグラウンドのプロセスか？
+        // フォアグラウンドのプロセスか？を判定
+        let is_fg = self.fg.map_or(false, |x| pgid == x);
+
+        // jobsフィールドから、ジョブ実行時に指定されたコマンド実行の文字列を取得できる
         let line = &self.jobs.get(&job_id).unwrap().1;
+
         if is_fg {
             // 状態が変化したプロセスはフォアグラウンドに設定
-            if self.is_group_empty(pgid).unwrap() {
+            if self.is_group_empty(pgid) {
                 // フォアグラウンドプロセスが空の場合
                 // ジョブ情報を削除してシェルをフォアグラウンドに設定
                 eprintln!("[{job_id}] 終了\t{line}");
@@ -512,12 +516,92 @@ impl Worker {
                 self.set_shell_fg(shell_tx);
             }
         } else {
-            // プロセスグループが殻の場合、ジョブ情報を削除
-            if self.is_group_empty(pgid).unwrap() {
+            // プロセスグループが空の場合、ジョブ情報を削除
+            if self.is_group_empty(pgid) {
                 eprintln!("[{job_id}] 終了\t{line}");
                 self.remove_job(job_id);
             }
         }
+    }
+
+    /// 新たなジョブ情報を追加
+    fn insert_job(&mut self, job_id: usize, pgid: Pid, pids: HashMap<Pid, ProcInfo>, line: &str) {
+        // ジョブ情報を追加
+        assert!(!self.jobs.contains_key(&job_id));
+        self.jobs.insert(job_id, (pgid, line.to_string()));
+
+        // pgid_to_pidsへ追加するプロセス
+        let mut procs = HashSet::new();
+        for (pid, info) in pids {
+            procs.insert(pid);
+
+            assert!(!self.pid_to_info.contains_key(&pid));
+            self.pid_to_info.insert(pid, info); // プロセスの情報を追加
+        }
+
+        // プロセスグループの情報を追加
+        assert!(!self.pgid_to_pids.contains_key(&pgid));
+        self.pgid_to_pids.insert(pgid, (job_id, procs));
+    }
+
+    /// プロセスの実行状態を設定し、以前の状態を返す。
+    /// pidが存在しないプロセスの場合はNoneを返す。
+    fn set_pid_state(&mut self, pid: Pid, state: ProcState) -> Option<ProcState> {
+        let info = self.pid_to_info.get_mut(&pid)?;
+        Some(replace(&mut info.state, state))
+    }
+
+    /// プロセスの情報を削除し、削除できた場合はプロセスの所属する
+    /// (ジョブID, プロセスグループID)を返す。
+    /// 存在しないプロセスの場合はNoneを返す。
+    fn remove_pid(&mut self, pid: Pid) -> Option<(usize, Pid)> {
+        let pgid = self.pid_to_info.get(&pid)?.pgid; // プロセスグループIDを取得
+        let it = self.pgid_to_pids.get_mut(&pgid)?;
+        it.1.remove(&pid); // プロセスグループからpidを削除
+        let job_id = it.0; // ジョブIDを取得
+        Some((job_id, pgid))
+    }
+
+    /// ジョブ情報を削除し、関連するプロセスグループの情報も削除
+    fn remove_job(&mut self, job_id: usize) {
+        if let Some((pgid, _)) = self.jobs.remove(&job_id) {
+            if let Some((_, pids)) = self.pgid_to_pids.remove(&pgid) {
+                assert!(!pids.is_empty()); // ジョブを削除するときはプロセスグループは空のはず
+            }
+        }
+    }
+
+    /// 空のプロセスグループなら真
+    fn is_group_empty(&self, pgid: Pid) -> bool {
+        self.pgid_to_pids.get(&pgid).unwrap().1.is_empty()
+    }
+
+    /// プロセスグループのプロセスがすべて停止中なら真
+    fn is_group_stop(&self, pgid: Pid) -> Option<bool> {
+        for pid in self.pgid_to_pids.get(&pgid)?.1.iter() {
+            if self.pid_to_info.get(pid).unwrap().state == ProcState::Run {
+                return Some(false);
+            }
+        }
+        Some(true)
+    }
+
+    /// シェルをフォアグラウンドに設定
+    fn set_shell_fg(&mut self, shell_tx: &SyncSender<ShellMsg>) {
+        // シェルがフォアグラウンドであることを示すために、fgをNoneに設定する
+        self.fg = None;
+        tcsetpgrp(libc::STDIN_FILENO, self.shell_pgid).unwrap();
+        shell_tx.send(ShellMsg::Continue(self.exit_val)).unwrap(); // シェルの入力を再開させる
+    }
+
+    /// 新たなジョブIDを取得
+    fn get_new_job_id(&self) -> Option<usize> {
+        for i in 0..=usize::MAX {
+            if !self.jobs.contains_key(&i) {
+                return Some(i);
+            }
+        }
+        None
     }
 }
 

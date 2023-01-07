@@ -2,5 +2,8 @@
 
 members = [
     "regex_engine",
-    "zerosh"
+    "zerosh",
+    "ackerman_func",
+    "dbg_target",
+    "zdbg"
 ]

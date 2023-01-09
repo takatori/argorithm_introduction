@@ -1,5 +1,4 @@
 use crate::helper::DynError;
-use nix::s
 use nix::{
     libc::user_regs_struct,
     sys::{
@@ -169,13 +168,16 @@ impl ZDbg<Running> {
             "break" | "b" => self.do_break(cmd)?,
             "continue" | "c" => return self.do_continue(),
             "registers" | "regs" => {
-                let regs = ptrace::getregs(self.info.pid)?;
-                print_regs(&regs);
+                // レジスタ情報の取得
+                // Cのptrace(PTRACE_GETREGS, pid, 0, &struct)に相当
+                // &structはレジスタ情報おw保存する構造体へのポインタであり、結果がこれに格納される
+                let regs = ptrace::getregs(self.info.pid)?; 
+                print_regs(&regs); // 取得した情報を表示する
             },
             "stepi" | "s" => return self.do_stepi(),
             "run" | "r" => eprintln!("<<すでに実行中です>>"),
             "exit" => {
-                self.do_exit()?;
+                self.do_exit()?; // 子プロセスを終了させる
                 return Ok(State::Exit);
             }
             _ => self.do_cmd_common(cmd),
@@ -183,6 +185,82 @@ impl ZDbg<Running> {
 
         Ok(State::Running(self))
     }
+
+    /// exitを実行。実行中のプロセスはkill
+    fn do_exit(self) -> Result<(), DynError> {
+        loop {
+            // SIGKILLシグナルを子プロセスに送信する
+            ptrace::kill(self.info.pid)?;
+            match waitpid(self.info.pid, None)? {
+                WaitStatus::Exited(..) | WaitStatus::Signaled(..) => return Ok(()),
+                _ => (),
+            }
+        }
+    }
+
+    /// breakを実行
+    fn do_break(&mut self, cmd: &[&str]) -> Result<(), DynError> {
+        if self.set_break_addr(cmd) {
+            self.set_break()?;
+        }
+        Ok(())
+    }
+
+    /// ブレークポイントを実際に設定
+    /// つまり、該当アドレスのメモリを"int 3" = 0xccに設定
+    fn set_break(&mut self) -> Result<(), DynError> {
+        let addr = if let Some(addr) = self.info.brk_addr {
+            addr
+        } else {
+            return Ok(());
+        };
+
+        // ブレークするアドレスにあるメモリ上の値を取得
+        // メモリの値はi64型で返される。つまり、8バイト単位で取得できる。
+        let val = match ptrace::read(self.info.pid, addr) {
+            Ok(val) => val,
+            Err(e) => {
+                eprintln!("<<ptrace::readに失敗 : {e}, addr = {:p}>>", addr);
+                return Ok(());
+            }
+        };
+
+        // メモリ上の値を表示する補助関数
+        fn print_val(addr: usize, val: i64) {
+            print!("{:x}:", addr);
+            for n in (0..8).map(|n| ((val >> (n * 8)) & 0xff) as u8) {
+                print!(" {:x}", n);
+            }
+        }
+
+        println!("<<以下のようにメモリを書き換えます>>");
+        print!("<<before : "); // もとの値を表示
+        print_val(addr as usize, val);
+        println!(">>");
+
+        // "int 3"に設定
+        // valの下位8ビットを0xccに設定。(val & !0xff)とすると、valの下位8ビットが0クリアされ、
+        // その後、0xccとビット和を取ると、下位8ビットが0xccとなる
+        let val_int3 = (val & !0xff) | 0xcc; 
+        print!("<<after : "); // 変更後の値を表示
+        print_val(addr as usize, val_int3);
+        println!(">>");
+
+        // "int 3"をメモリに書き込み
+        // as *mut c_voidと型変換しているのは、ptrace::write、つまり、Cのptraceが引数にポインタを取るためである
+        match unsafe { ptrace::write(self.info.pid, addr, val_int3 as *mut c_void) } {
+            Ok(_) => {
+                self.info.brk_addr = Some(addr);
+                self.info.brk_val = val; // 元の値を保持
+            }
+            Err(e) => {
+                eprintln!("<<ptrace::writeに失敗 : {e}, addr = {:p}>>", addr);
+            }
+        }
+        Ok(())
+    }
+
+
 
     fn do_stepi(self) -> Result<State, DynError> {}
 }

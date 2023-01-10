@@ -609,12 +609,12 @@ type CmdResult<'a> = Result<Vec<(&'a str, Vec<&'a str>)>, DynError>;
 
 /// コマンドをパース
 fn parse_cmd(line: &str) -> CmdResult {
-    let parsed_cmds = vec![];
+    let mut parsed_cmds = vec![];
 
     for cmd in line.split('|') {
         let cmd = cmd.trim();
         if cmd.is_empty() {
-            return Err();
+            return Err("空のコマンド".into());
         }
         let cmd_and_options: Vec<&str> = cmd.split_whitespace().collect();
         let cmd = cmd_and_options[0];

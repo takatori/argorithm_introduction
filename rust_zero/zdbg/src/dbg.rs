@@ -239,6 +239,12 @@ impl ZDbg<Running> {
         println!(">>");
 
         // "int 3"に設定
+        // "int 3"はソフトウェア割り込みを発生させるx86_64の命令
+        // この命令はブレークポイントに用いられ、int 3を発行したプロセスへはOSからSIGTRAPシグナルが送信される
+        // プログラム中にint 3命令があると、この命令の実行後に割り込みハンドラが起動され、その後にSIGTRAPが発行されてプロセスが停止する
+        // これがブレークポイントの正体。ブレークポイントを設定するためには、停止したいアドレスを特定してint 3に書き換えれば良い
+        // 
+        // "int 3"命令のバイナリ表現は0xcc
         // valの下位8ビットを0xccに設定。(val & !0xff)とすると、valの下位8ビットが0クリアされ、
         // その後、0xccとビット和を取ると、下位8ビットが0xccとなる
         let val_int3 = (val & !0xff) | 0xcc; 
@@ -260,6 +266,25 @@ impl ZDbg<Running> {
         Ok(())
     }
 
+
+    /// 停止中の子プロセスを再開させるcontinueを実行
+    /// 
+    /// step_and_breakやwait_childメソッドを実行すると子プロセスが終了する可能性があるため
+    /// このメソッドはselfで値を取得して、遷移後の状態を返すようにしている
+    fn do_continue(self) -> Result<State, DynError> {
+        // ブレークポイントで停止していた場合は1ステップ実行後再設定
+        match self.step_and_break()? {
+            State::Running(r) => {
+                // 実行再開
+                // ptrace::contで子プロセスを再開させる
+                // ptrace::contの第２引数には、再開時に送信するシグナルを指定可能
+                // Noneを指定した場合はシグナルは送信されない
+                ptrace::cont(r.info.pid, None)?;
+                r.wait_child()
+            }
+            n => Ok(n),
+        }
+    }
 
 
     fn do_stepi(self) -> Result<State, DynError> {}

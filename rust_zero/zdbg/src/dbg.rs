@@ -286,6 +286,27 @@ impl ZDbg<Running> {
         }
     }
 
+    /// ブレークポイントで停止していた場合は、
+    /// 1ステップ実行しブレークポイントを再設定
+    fn step_and_break(mut self) -> Result<State, DynError> {
+        let regs = ptrace::getregs(self.info.pid)?;
+        if Some((regs.rip) as *mut c_void) == self.info.brk_addr {
+            ptrace::step(self.info.pid, None)?; // 1ステップ実行
+            match waitpid(self.info.pid, None)? {
+                WaitStatus::Exited(..) | WaitStatus::Signaled(..) => {
+                    println!("<<子プロセスが終了しました>>");
+                    return Ok(State::NotRunning(ZDbg::<NotRunning>{
+                        info: self.info,
+                        _state: NotRunning,
+                    }));
+                }
+                _ => (),                
+            }
+            self.set_break()?; // 再度ブレークポイントを設定
+        }
+        Ok(State::Running(self))
+    }
+
 
     fn do_stepi(self) -> Result<State, DynError> {}
 }

@@ -1,6 +1,6 @@
 use crate::helper::DynError;
 use nix::{
-    libc::user_regs_struct,
+    libc::{user_regs_struct, ptrace},
     sys::{
         personality::{self, Persona},
         ptrace,
@@ -8,7 +8,7 @@ use nix::{
     },
     unistd::{execvp, fork, ForkResult, Pid},
 };
-use std::ffi::{c_void, CString};
+use std::{ffi::{c_void, CString}, ops::Not};
 
 /// デバッガ内の情報
 pub struct DbgInfo {
@@ -305,6 +305,36 @@ impl ZDbg<Running> {
             self.set_break()?; // 再度ブレークポイントを設定
         }
         Ok(State::Running(self))
+    }
+
+    /// 子プロセスをwait. 子プロセスが終了した場合はNotRunning状態に遷移
+    fn wait_child(self) -> Result<State, DynError> {
+        match waitpid(self.info.pid, None)? {
+            WaitStatus::Exited(..) | WaitStatus::Signaled(..) => {
+                println!("<<子プロセスが終了しました>>");
+                let not_run = ZDbg::<NotRunning> {
+                    info: self.info,
+                    _state: NotRunning,
+                };
+                Ok(State::NotRunning(not_run))
+            }
+            WaitStatus::Stopped(..) => {
+                let mut regs = ptrace::getregs(self.info.pid)?;
+                if Some((regs.rip - 1) as *mut c_void) == self.info.brk_addr {
+                    // 書き換えたメモリをもとの値に戻す
+                    unsafe {
+                        ptrace::write(self.info.pid, self.info.brk_addr.unwrap(), self.info.brk_val as *mut c_void)?
+                    };
+
+                    // ブレークポイントで停止したアドレスから１つ戻す
+                    regs.rip -= 1;
+                    ptrace::setregs(self.info.pid, regs)?;
+                }
+                println!("<<子プロセスが停止しました : PC = {:#x}>>", regs.rip);
+                Ok(State::Running(self))
+            }
+            _ => Err("waitpidの返り値が不正です".into())
+        }
     }
 
 

@@ -1,6 +1,6 @@
 use crate::helper::DynError;
 use nix::{
-    libc::{user_regs_struct, ptrace},
+    libc::{ptrace, user_regs_struct},
     sys::{
         personality::{self, Persona},
         ptrace,
@@ -8,7 +8,11 @@ use nix::{
     },
     unistd::{execvp, fork, ForkResult, Pid},
 };
-use std::{ffi::{c_void, CString}, ops::Not};
+use std::{
+    ffi::{c_void, CString},
+    ops::Not,
+    rc::Rc,
+};
 
 /// デバッガ内の情報
 pub struct DbgInfo {
@@ -124,7 +128,7 @@ impl ZDbg<NotRunning> {
                 // 自身がデバッガによるトレース対象であることを指定する
                 // tracemeを指定したあとは、execすると即座にプロセスが停止するようになる
                 // nix::sys::ptraceにはシステムコールのptrace関数のラッパが多く定義されている
-                ptrace::traceme().unwrap(); 
+                ptrace::traceme().unwrap();
                 // execvpで子プロセスをデバッグ対象のプログラムに置き換え
                 execvp(&CString::new(self.info.filename.as_str()).unwrap(), &args).unwrap();
                 unreachable!();
@@ -143,7 +147,7 @@ impl ZDbg<NotRunning> {
                     // ブレークポイントを子プロセスのメモリ上に実際に設定
                     // ブレークポイントはプロセスの実行中にしか行えないため、
                     // この時点でブレークポイントを設定している
-                    dbg.set_break()?: 
+                    dbg.set_break()?;
                     // 子プロセスの実行を再開
                     dbg.do_continue()
                 }
@@ -158,7 +162,6 @@ impl ZDbg<NotRunning> {
 
 /// Running時に呼び出し可能なメソッド
 impl ZDbg<Running> {
-
     pub fn do_cmd(mut self, cmd: &[&str]) -> Result<State, DynError> {
         if cmd.is_empty() {
             return Ok(State::Running(self));
@@ -171,9 +174,9 @@ impl ZDbg<Running> {
                 // レジスタ情報の取得
                 // Cのptrace(PTRACE_GETREGS, pid, 0, &struct)に相当
                 // &structはレジスタ情報おw保存する構造体へのポインタであり、結果がこれに格納される
-                let regs = ptrace::getregs(self.info.pid)?; 
+                let regs = ptrace::getregs(self.info.pid)?;
                 print_regs(&regs); // 取得した情報を表示する
-            },
+            }
             "stepi" | "s" => return self.do_stepi(),
             "run" | "r" => eprintln!("<<すでに実行中です>>"),
             "exit" => {
@@ -243,11 +246,11 @@ impl ZDbg<Running> {
         // この命令はブレークポイントに用いられ、int 3を発行したプロセスへはOSからSIGTRAPシグナルが送信される
         // プログラム中にint 3命令があると、この命令の実行後に割り込みハンドラが起動され、その後にSIGTRAPが発行されてプロセスが停止する
         // これがブレークポイントの正体。ブレークポイントを設定するためには、停止したいアドレスを特定してint 3に書き換えれば良い
-        // 
+        //
         // "int 3"命令のバイナリ表現は0xcc
         // valの下位8ビットを0xccに設定。(val & !0xff)とすると、valの下位8ビットが0クリアされ、
         // その後、0xccとビット和を取ると、下位8ビットが0xccとなる
-        let val_int3 = (val & !0xff) | 0xcc; 
+        let val_int3 = (val & !0xff) | 0xcc;
         print!("<<after : "); // 変更後の値を表示
         print_val(addr as usize, val_int3);
         println!(">>");
@@ -266,9 +269,8 @@ impl ZDbg<Running> {
         Ok(())
     }
 
-
     /// 停止中の子プロセスを再開させるcontinueを実行
-    /// 
+    ///
     /// step_and_breakやwait_childメソッドを実行すると子プロセスが終了する可能性があるため
     /// このメソッドはselfで値を取得して、遷移後の状態を返すようにしている
     fn do_continue(self) -> Result<State, DynError> {
@@ -295,12 +297,12 @@ impl ZDbg<Running> {
             match waitpid(self.info.pid, None)? {
                 WaitStatus::Exited(..) | WaitStatus::Signaled(..) => {
                     println!("<<子プロセスが終了しました>>");
-                    return Ok(State::NotRunning(ZDbg::<NotRunning>{
+                    return Ok(State::NotRunning(ZDbg::<NotRunning> {
                         info: self.info,
                         _state: NotRunning,
                     }));
                 }
-                _ => (),                
+                _ => (),
             }
             self.set_break()?; // 再度ブレークポイントを設定
         }
@@ -323,7 +325,11 @@ impl ZDbg<Running> {
                 if Some((regs.rip - 1) as *mut c_void) == self.info.brk_addr {
                     // 書き換えたメモリをもとの値に戻す
                     unsafe {
-                        ptrace::write(self.info.pid, self.info.brk_addr.unwrap(), self.info.brk_val as *mut c_void)?
+                        ptrace::write(
+                            self.info.pid,
+                            self.info.brk_addr.unwrap(),
+                            self.info.brk_val as *mut c_void,
+                        )?
                     };
 
                     // ブレークポイントで停止したアドレスから１つ戻す
@@ -333,12 +339,13 @@ impl ZDbg<Running> {
                 println!("<<子プロセスが停止しました : PC = {:#x}>>", regs.rip);
                 Ok(State::Running(self))
             }
-            _ => Err("waitpidの返り値が不正です".into())
+            _ => Err("waitpidの返り値が不正です".into()),
         }
     }
 
-
-    fn do_stepi(self) -> Result<State, DynError> {}
+    fn do_stepi(self) -> Result<State, DynError> {
+        Ok(())
+    }
 }
 
 /// ヘルプを表示
@@ -353,4 +360,57 @@ fn do_help() {
         exit         : 終了
         help         : このヘルプを表示 (h) "#
     );
+}
+
+/// レジスタを表示
+fn print_regs(regs: &user_regs_struct) {
+    println!(
+        r#"RIP: {:#016x}, RSP:{:#016x}, RBP: {:#016x}
+RAX: {:#016x}, RBX:{:#016x}, RCX: {:#016x}
+RDX: {:#016x}, RSI:{:#016x}, RDI: {:#016x}
+ R8: {:#016x},  R9:{:#016x}, R10: {:#016x}
+R11: {:#016x}, R12:{:#016x}, R13: {:#016x} 
+R14: {:#016x}, R15:{:#016x}"#,
+        regs.rip,
+        regs.rsp,
+        regs.rbp,
+        regs.rax,
+        regs.rbx,
+        regs.rcx,
+        regs.rdx,
+        regs.rsi,
+        regs.rdi,
+        regs.r8,
+        regs.r9,
+        regs.r10,
+        regs.r11,
+        regs.r12,
+        regs.r13,
+        regs.r14,
+        regs.r15,
+    );
+}
+
+/// コマンドからブレークポイントを計算
+fn get_break_addr(cmd: &[&str]) -> Option<*mut c_void> {
+    if cmd.len() < 2 {
+        eprintln!("<<アドレスを指定してください\n例: break 0x8000>>");
+        return None;
+    }
+
+    let addr_str = cmd[1];
+    if &addr_str[0..2] != "0x" {
+        eprintln!("<<アドレスは16進数でのみ指定可能です\n例: break 0x8000>>");
+        return None;
+    }
+
+    let addr = match usize::from_str_radix(&addr_str[2..], 16) {
+        Ok(addr) => addr,
+        Err(e) => {
+            eprintln!("<<アドレス変換エラー : {e}>>");
+            return None;
+        }
+    } as *mut c_void;
+
+    Some(addr)
 }

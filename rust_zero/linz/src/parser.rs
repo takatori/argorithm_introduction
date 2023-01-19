@@ -55,16 +55,16 @@ pub struct LetExpr {
 /// 値。真偽値、関数、ペア値などになる
 #[derive(Debug)]
 pub enum ValExpr {
-    Bool(bool), // 真偽値リテラル
+    Bool(bool),                 // 真偽値リテラル
     Pair(Box<Expr>, Box<Expr>), // ペア
-    Fun(FnExpr) // 関数(λ抽象)
+    Fun(FnExpr),                // 関数(λ抽象)
 }
 
 /// 修飾子
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub emum Qual {
+pub enum Qual {
     Lin, // 線形型
-    Un, // 制約のない一般的な型
+    Un,  // 制約のない一般的な型
 }
 
 /// 修飾子付き値
@@ -90,16 +90,36 @@ pub struct FreeExpr {
 }
 
 /// 修飾子付き型
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct TypeExpr {
     pub qual: Qual,
     pub prim: PrimType,
 }
 
 /// プリミティブ型
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum PrimType {
-    Bool, // 真偽値型
-    Pair(Box<TypeExpr>, Box<TypeExpr>), // ペア型
+    Bool,                                // 真偽値型
+    Pair(Box<TypeExpr>, Box<TypeExpr>),  // ペア型
     Arrow(Box<TypeExpr>, Box<TypeExpr>), // 関数型
+}
+
+impl fmt::Display for TypeExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.qual == Qual::Lin {
+            write!(f, "lin {}", self.prim)
+        } else {
+            write!(f, "un {}", self.prime)
+        }
+    }
+}
+
+impl fmt::Display for PrimType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PrimType::Bool => write!(f, "bool"),
+            PrimType::Pair(t1, t2) => write!(f, "({t1} * {t2})"),
+            PrimType::Arrow(t1, t2) => write!(f, "({t1} -> {t2})"),
+        }
+    }
 }

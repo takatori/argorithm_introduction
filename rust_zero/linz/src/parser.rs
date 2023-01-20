@@ -123,3 +123,19 @@ impl fmt::Display for PrimType {
         }
     }
 }
+
+pub fn parse_expr(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
+    let (i, _) = multispace0(i)?;
+    let (i, val) = alt((alpha1, tag("(")))(i)?;
+
+    match val {
+        "let" => parse_let(i),
+        "if" => parse_if(i),
+        "split" => parse_split(i),
+        "free" => parse_free(i),
+        "lin" => parse_qval(Qaul::Lin, i),
+        "un" => parse_qval(Qual::Un, i),
+        "(" => parse_app(i),
+        _ => Ok((i, Expr::Var(val.to_string()))),
+    }
+}

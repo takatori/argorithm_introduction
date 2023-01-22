@@ -124,6 +124,7 @@ impl ZDbg<NotRunning> {
                 // Linuxではセキュリティ上の理由から、可能な場合はASLRを適用している
                 // ASLRは、Return-to-libc攻撃といった攻撃手法による被害を軽減させる目的で導入された。
                 let p = personality::get().unwrap();
+                println!("personality{:?}", p);
                 personality::set(p | Persona::ADDR_NO_RANDOMIZE).unwrap();
                 // 自身がデバッガによるトレース対象であることを指定する
                 // tracemeを指定したあとは、execすると即座にプロセスが停止するようになる
@@ -250,6 +251,7 @@ impl ZDbg<Running> {
         // "int 3"命令のバイナリ表現は0xcc
         // valの下位8ビットを0xccに設定。(val & !0xff)とすると、valの下位8ビットが0クリアされ、
         // その後、0xccとビット和を取ると、下位8ビットが0xccとなる
+        // x86_64はリトルエンディアンを用いるため、下位ビットを書き換えている
         let val_int3 = (val & !0xff) | 0xcc;
         print!("<<after : "); // 変更後の値を表示
         print_val(addr as usize, val_int3);
@@ -273,6 +275,18 @@ impl ZDbg<Running> {
     ///
     /// step_and_breakやwait_childメソッドを実行すると子プロセスが終了する可能性があるため
     /// このメソッドはselfで値を取得して、遷移後の状態を返すようにしている
+    ///
+    /// int 3でプロセスが停止した場合、プログラムカウンタはint 3のアドレス+1を指している
+    /// プロセスを正常に再開させるためには、int 3に書き換えた箇所の復元と、プログラムカウンタを-1にする必要がある
+    ///
+    /// 1. continueコマンドが実行される
+    /// 2. 機械語レベルで1ステップ実行　<step_and_brek関数> (前回のwait_childでbrk_addrのメモリの値はもとの値に復元済みなので普通に実行できる)
+    /// 3. ブレークポイントを再設定 <step_and_brek関数> (brk_addrの値をint 3に再設定)
+    /// 4. ptrace::contを呼び出し、子プロセスを再開 <step_and_brek関数>
+    /// 5. waitpidで子プロセス停止を待ち、ブレークポイントで停止する <wait_child関数>
+    /// 6. ブレークポイントを設定した番地のメモリの値を、元の値に復元 <wait_child関数> (次のstep_and_brek実行時に元の命令が実行されるようにする)
+    /// 7. プログラムカウンタを-1する。 <wait_child関数> (プログラムカウンタがbrk_addrの+1を指しているので)
+    /// 8. 1に戻る
     fn do_continue(self) -> Result<State, DynError> {
         // ブレークポイントで停止していた場合は1ステップ実行後再設定
         match self.step_and_break()? {
@@ -290,10 +304,13 @@ impl ZDbg<Running> {
 
     /// ブレークポイントで停止していた場合は、
     /// 1ステップ実行しブレークポイントを再設定
+    /// これは、ブレークポインが揮発してしまうのを防ぐための操作
+    /// ブレークポイントを再設定しないと、ループなどで再び同じコードが時刻された場合に停止しなくなってしまう
     fn step_and_break(mut self) -> Result<State, DynError> {
-        let regs = ptrace::getregs(self.info.pid)?;
+        let regs = ptrace::getregs(self.info.pid)?; // レジスタ取得
         if Some((regs.rip) as *mut c_void) == self.info.brk_addr {
-            ptrace::step(self.info.pid, None)?; // 1ステップ実行
+            // プログラムカウンタを意味するripがブレークポイントのアドレスかチェック
+            ptrace::step(self.info.pid, None)?; // 機械語レベルで1ステップ実行
             match waitpid(self.info.pid, None)? {
                 WaitStatus::Exited(..) | WaitStatus::Signaled(..) => {
                     println!("<<子プロセスが終了しました>>");
@@ -321,8 +338,10 @@ impl ZDbg<Running> {
                 Ok(State::NotRunning(not_run))
             }
             WaitStatus::Stopped(..) => {
+                // 子プロセスが停止した場合
                 let mut regs = ptrace::getregs(self.info.pid)?;
                 if Some((regs.rip - 1) as *mut c_void) == self.info.brk_addr {
+                    // ブレークポイントで停止した場合
                     // 書き換えたメモリをもとの値に戻す
                     unsafe {
                         ptrace::write(
@@ -343,8 +362,48 @@ impl ZDbg<Running> {
         }
     }
 
-    fn do_stepi(self) -> Result<State, DynError> {
-        Ok(())
+    /// stepiコマンドを実行する
+    /// 機械語レベルで1ステップ実行を行うメソッド
+    fn do_stepi(mut self) -> Result<State, DynError> {
+        let regs = ptrace::getregs(self.info.pid)?;
+        if Some((regs.rip) as *mut c_void) == self.info.brk_addr {
+            // ブレークポイントで停止した場合は、そのメモリの値が0xccとなっている
+            // 可能性があるため、もとの値に復元する
+            unsafe {
+                ptrace::write(
+                    self.info.pid,
+                    self.info.brk_addr.unwrap(),
+                    self.info.brk_val as *mut c_void,
+                )?
+            };
+            // regs.rip -= 1;
+            // ptrace::setregs(self.info.pid, regs)?;
+            ptrace::step(self.info.pid, None)?; // 機械語レベルで1ステップ実行
+            match waitpid(self.info.pid, None)? {
+                WaitStatus::Exited(..) | WaitStatus::Signaled(..) => {
+                    println!("<<子プロセスが終了しました>>");
+                    return Ok(State::NotRunning(ZDbg::<NotRunning> {
+                        info: self.info,
+                        _state: NotRunning,
+                    }));
+                }
+                _ => (),
+            }
+            self.set_break()?;
+        } else {
+            ptrace::step(self.info.pid, None)?; // 機械語レベルで1ステップ実行
+            match waitpid(self.info.pid, None)? {
+                WaitStatus::Exited(..) | WaitStatus::Signaled(..) => {
+                    println!("<<子プロセスが終了しました>>");
+                    return Ok(State::NotRunning(ZDbg::<NotRunning> {
+                        info: self.info,
+                        _state: NotRunning,
+                    }));
+                }
+                _ => (),
+            }
+        }
+        Ok(State::Running(self))
     }
 }
 

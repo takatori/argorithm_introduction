@@ -15,6 +15,6 @@ fn main() -> Result<(), DynError> {
 
     let sh = shell::Shell::new(logfile);
     sh.run()?;
-    
+
     Ok(())
 }

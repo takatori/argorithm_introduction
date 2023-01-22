@@ -139,3 +139,47 @@ pub fn parse_expr(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
         _ => Ok((i, Expr::Var(val.to_string()))),
     }
 }
+
+/// 修飾子付き値をパース
+fn parse_qval(q: Qual, i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
+    let (i, _) = multispace1(i)?;
+    let (i, v) = parse_val(i)?;
+
+    Ok((i, Expr::QVal(QvalExpr { qual: q, val: v })))
+}
+
+/// 真偽値、関数、ペアの値をパース
+fn parse_val(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {
+    let (i, val) = alt((tag("fn"), tag("true"), tag("false"), tag("<")))(i)?;
+    match val {
+        "fn" => parse_fn(i),
+        "true" => Ok((i, ValExpr::Bool(true))),
+        "false" => Ok((i, ValExpr::Bool(false))),
+        "<" => parse_pair(i),
+        _ => unreachable!(),
+    }
+}
+
+fn parse_fn(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {
+    let (i, _) => multispace0(i)?;
+    let (i, val) = parse_val(i)?; // 引数
+
+    let (i, _) = multispace0(i)?;
+    let (i, _) = char(':')(i)?;
+    let (i, _) = multispace0(i)?;
+
+    let (i, ty) = parse_type(i)?; // 引数の型
+    let (i, _) = multispace0(i)?;
+
+    // { <E> } というように、波括弧で囲まれた式をパース
+    let (i, epxr) = delimited(
+        char('{'),
+        delimited(multispace0, parse_expr, multispace0),
+        char('}'),
+    )(i)?;
+
+    Ok((
+        i,
+        ValExpr::Fun(FnExpr { var, ty, expr: Box::new(expr) })
+    ))
+}

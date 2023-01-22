@@ -124,8 +124,9 @@ impl ZDbg<NotRunning> {
                 // Linuxではセキュリティ上の理由から、可能な場合はASLRを適用している
                 // ASLRは、Return-to-libc攻撃といった攻撃手法による被害を軽減させる目的で導入された。
                 let p = personality::get().unwrap();
-                println!("personality{:?}", p);
+                println!("before personality {:?}", p);
                 personality::set(p | Persona::ADDR_NO_RANDOMIZE).unwrap();
+                println!("after personality {:?}", p);
                 // 自身がデバッガによるトレース対象であることを指定する
                 // tracemeを指定したあとは、execすると即座にプロセスが停止するようになる
                 // nix::sys::ptraceにはシステムコールのptrace関数のラッパが多く定義されている

@@ -1,10 +1,10 @@
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::complete::{alpha1, char, multispace0, multispace1},
+    character::{complete::{alpha1, char, multispace0, multispace1}, streaming::multispace1},
     error::VerboseError,
     sequence::delimited,
-    IResult,
+    IResult, multi,
 };
 use std::fmt;
 
@@ -182,4 +182,60 @@ fn parse_fn(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {
         i,
         ValExpr::Fun(FnExpr { var, ty, expr: Box::new(expr) })
     ))
+}
+
+/// 変数をパース。変数は1文字以上のアルファベットから成り立つ
+fn parse_var(i: &str) -> IResult<&str, String, VerboseError<&str>> {
+    let (i, v) = alpha1(i)?;
+    Ok((i, v.to_string()))
+}
+
+fn parse_type(i: &str) -> IResult<&str, TypeExpr, VerboseError<&str>> {
+    let (i, q) = parse_qual(i)?; // 修飾子
+    let (i, _) = multispace1(i)?; 
+    let (i, val) = alt((tag("bool"), tag("(")))(i)?;
+    if val == "bool" {
+        // bool型
+        Ok((
+            i,
+            TypeExpr {
+                qual: q,
+                prim: PrimType::Bool,
+            }
+        ))
+    } else {
+        // 関数型かペア型
+        let (i, _) = multispace0(i)?;
+        let (i, t1) = parse_type(i)?; // 1つめの型
+        let (i, _) = multispace0(i)?;
+
+        // ->か*をパース
+        // ->の場合は関数型で*の場合はペア型
+        let (i, op) = alt((tag("*"), tag("->")))(i)?;
+        
+        let (i, _) = multispace0(i)?;
+        let (i, t2) = parse_type(i)?; // ２つ目の型
+        let (i, _) = multispace0(i)?;
+
+        let (i, _) = char(')')(i)?; //
+
+        Ok((i,
+        TypeExpr {
+            qual: q,
+            prim: if op == "*" {
+                PrimType::Pair(Box::new(t1), Box::new(t2))
+            } else {
+                PrimType::Arrow(Box::new(t1), Box::new(t2))
+            }
+        }))
+    }
+}
+
+fn parse_qual(i: &str) -> IResult<&str, Qual, VerboseError<&str>> {
+    let (i, val) = alt((tag("lin"), tag("un")))(i)?;
+    if val == "lin" {
+        Ok((i, Qual::Lin))
+    } else {
+        Ok((i, Qual::Un))
+    }
 }

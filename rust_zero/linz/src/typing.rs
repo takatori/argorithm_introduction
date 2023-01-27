@@ -31,4 +31,13 @@ impl TypeEnvStack {
             last.1.insert(key, Some(value));
         }
     }
+
+    fn get_mut(&mut self, key: &str) -> Option<(usize, &mut Option<parser::TypeExpr>)> {
+        for (depth, elm) in self.vars.iter_mut().rev() {
+            if let Some(e) = elm.get_mut(key) {
+                return Some((*depth, e));
+            }
+        }
+        None
+    }
 }

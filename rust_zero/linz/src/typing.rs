@@ -41,3 +41,17 @@ impl TypeEnvStack {
         None
     }
 }
+
+type TResult<'a> = Result<parser::TypeExpr, Cow<'a, str>>;
+
+pub fn typing<'a>(expr: &parser::Expr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {
+    match expr {
+        parser::Expr::App(e) => typing_app(e, env, depth),
+        parser::Expr::QVal(e) => typing_qval(e, env, depth),
+        parser::Expr::Free(e) => typing_free(e, env, depth),
+        parser::Expr::If(e) => typing_if(e, env, depth),
+        parser::Expr::Split(e) => typing_split(e, env, depth),
+        parser::Expr::Var(e) => typing_var(e, env),
+        parser::Expr::Let(e) => typing_let(e, env, depth),
+    }
+}

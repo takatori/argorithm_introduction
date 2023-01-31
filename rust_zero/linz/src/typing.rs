@@ -122,3 +122,20 @@ fn typeing_qval<'a>(expr: &parser::QValExpr, env: &mut TypeEnv, depth: usize) ->
         prim: p
     })
 }
+
+/// 変数の型付け
+fn typing_var<'a>(expr: &str, env: &mut TypeEnv) -> TResult<'a> {
+    let ret = env.get_mut(expr);
+    if let Some(it) = ret {
+        // 消費されていない
+        if t.qual == parser::Qual::Lin {
+            // lin型
+            let eret = t.clone();
+            *it = None; // lin型の変数を消費
+            return Ok(eret);
+        } else {
+            return Ok(t.clone());
+        }
+    }
+    Err(format!("\"{expr}\"という変数は定義されていないか、利用済みか、キャプチャできない").into())
+}

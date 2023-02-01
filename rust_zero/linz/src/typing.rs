@@ -42,6 +42,57 @@ impl TypeEnvStack {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeEnv {
+    env_lin: TypeEnvStack, // lin用
+    env_un: TypeEnvStack, // un用
+}
+
+impl TypeEnv {
+    pub fn new() -> TypeEnv {
+        TypeEnv { 
+            env_lin: TypeEnvStack::new(), 
+            env_un: TypeEnvStack::new() 
+        }
+    }
+
+    /// 型環境をpush
+    fn push(&mut self, depth: usize) {
+        self.env_lin.push(depth);
+        self.env_un.push(depth);
+    }
+
+    /// 型環境をpop
+    fn pop(&mut self, depth: usize) -> (Option<VarToType>, Option<VarToType>) {
+        let t1 = self.env_lin.pop(depth);
+        let t2 = self.env_un.pop(depth);
+        (t1, t2)
+    }
+
+    /// 型環境へ変数と型を追加
+    fn insert(&mut self, key: String, value: parser::TypeExpr) {
+        if value.qual == parser::Qual::Lin {
+            self.env_lin.insert(key, value);
+        } else {
+            self.env_un.insert(key, value);
+        }
+    }
+
+    /// linとunの型環境からget_mutを呼び出し、depthが大きい方を返す
+    fn get_mut(&mut self, key: &str) -> Option<&mut Option<parser::TypeExpr>> {
+        match (self.env_lin.get_mut(key), self.env_un.get_mut(key)) {
+            (Some((d1, t1)), Some(d2, t2)) => match d1.cmp(&d2) {
+                Ordering::Less => Some(t2),
+                Ordering::Greater => Some(t1),
+                Ordering::Equal => panic!("invalid type environment"),
+            },
+            (Some((_, t1)), None) => Some(t1),
+            (None, Some((_, t2))) => Some(t2),
+            _ => None,            
+        }
+    }
+}
+
 type TResult<'a> = Result<parser::TypeExpr, Cow<'a, str>>;
 
 pub fn typing<'a>(expr: &parser::Expr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {
@@ -127,7 +178,9 @@ fn typeing_qval<'a>(expr: &parser::QValExpr, env: &mut TypeEnv, depth: usize) ->
 fn typing_var<'a>(expr: &str, env: &mut TypeEnv) -> TResult<'a> {
     let ret = env.get_mut(expr);
     if let Some(it) = ret {
-        // 消費されていない
+        // 定義されている
+        if let Some(t) = it {
+        // 消費されていない        
         if t.qual == parser::Qual::Lin {
             // lin型
             let eret = t.clone();
@@ -136,6 +189,7 @@ fn typing_var<'a>(expr: &str, env: &mut TypeEnv) -> TResult<'a> {
         } else {
             return Ok(t.clone());
         }
+    }
     }
     Err(format!("\"{expr}\"という変数は定義されていないか、利用済みか、キャプチャできない").into())
 }

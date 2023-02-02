@@ -193,3 +193,24 @@ fn typing_var<'a>(expr: &str, env: &mut TypeEnv) -> TResult<'a> {
     }
     Err(format!("\"{expr}\"という変数は定義されていないか、利用済みか、キャプチャできない").into())
 }
+
+/// if式の型付け
+fn typing_if<'a>(expr: &parser::IfExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {
+    let t1 = typing(&expr.cond_expr, env, depth)?;
+
+    // 条件の式の型はbool
+    if t1.prim != parser::PrimType::Bool {
+        return Err("ifの条件式がboolでない".into());
+    }
+
+    let mut e = env.clone();
+    let t2 = typing(&expr.then_expr, &mut e, depth)?;
+    let t3 = typing(&expr.else_expr, &mut e, depth)?;
+
+    // thenとelse部の型は同じで、
+    // thenとelse部の評価後の型環境は同じかチェック
+    if t2 != t3 || e != *env {
+        return Err("ifのthenとelseの式の型が異なる".into())
+    }
+    Ok(t2)
+}

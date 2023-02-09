@@ -1,14 +1,19 @@
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::{complete::{alpha1, char, multispace0, multispace1}, streaming::multispace1},
+    character::{
+        complete::{alpha1, char, multispace0, multispace1},
+        streaming::multispace1,
+    },
     error::VerboseError,
+    multi,
     sequence::delimited,
-    IResult, multi,
+    IResult,
 };
 use std::fmt;
 
 /// 抽象構文木
+#[derive(Debug)]
 pub enum Expr {
     Let(LetExpr),     // let式
     If(IfExpr),       // if式
@@ -109,7 +114,7 @@ impl fmt::Display for TypeExpr {
         if self.qual == Qual::Lin {
             write!(f, "lin {}", self.prim)
         } else {
-            write!(f, "un {}", self.prime)
+            write!(f, "un {}", self.prim)
         }
     }
 }
@@ -133,7 +138,7 @@ pub fn parse_expr(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
         "if" => parse_if(i),
         "split" => parse_split(i),
         "free" => parse_free(i),
-        "lin" => parse_qval(Qaul::Lin, i),
+        "lin" => parse_qval(Qual::Lin, i),
         "un" => parse_qval(Qual::Un, i),
         "(" => parse_app(i),
         _ => Ok((i, Expr::Var(val.to_string()))),
@@ -145,7 +150,7 @@ fn parse_qval(q: Qual, i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
     let (i, _) = multispace1(i)?;
     let (i, v) = parse_val(i)?;
 
-    Ok((i, Expr::QVal(QvalExpr { qual: q, val: v })))
+    Ok((i, Expr::QVal(QValExpr { qual: q, val: v })))
 }
 
 /// 真偽値、関数、ペアの値をパース
@@ -161,8 +166,8 @@ fn parse_val(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {
 }
 
 fn parse_fn(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {
-    let (i, _) => multispace0(i)?;
-    let (i, val) = parse_val(i)?; // 引数
+    let (i, _) = multispace0(i)?;
+    let (i, var) = parse_var(i)?; // 引数
 
     let (i, _) = multispace0(i)?;
     let (i, _) = char(':')(i)?;
@@ -172,7 +177,7 @@ fn parse_fn(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {
     let (i, _) = multispace0(i)?;
 
     // { <E> } というように、波括弧で囲まれた式をパース
-    let (i, epxr) = delimited(
+    let (i, expr) = delimited(
         char('{'),
         delimited(multispace0, parse_expr, multispace0),
         char('}'),
@@ -180,7 +185,11 @@ fn parse_fn(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {
 
     Ok((
         i,
-        ValExpr::Fun(FnExpr { var, ty, expr: Box::new(expr) })
+        ValExpr::Fun(FnExpr {
+            var,
+            ty,
+            expr: Box::new(expr),
+        }),
     ))
 }
 
@@ -192,7 +201,7 @@ fn parse_var(i: &str) -> IResult<&str, String, VerboseError<&str>> {
 
 fn parse_type(i: &str) -> IResult<&str, TypeExpr, VerboseError<&str>> {
     let (i, q) = parse_qual(i)?; // 修飾子
-    let (i, _) = multispace1(i)?; 
+    let (i, _) = multispace1(i)?;
     let (i, val) = alt((tag("bool"), tag("(")))(i)?;
     if val == "bool" {
         // bool型
@@ -201,7 +210,7 @@ fn parse_type(i: &str) -> IResult<&str, TypeExpr, VerboseError<&str>> {
             TypeExpr {
                 qual: q,
                 prim: PrimType::Bool,
-            }
+            },
         ))
     } else {
         // 関数型かペア型
@@ -212,22 +221,24 @@ fn parse_type(i: &str) -> IResult<&str, TypeExpr, VerboseError<&str>> {
         // ->か*をパース
         // ->の場合は関数型で*の場合はペア型
         let (i, op) = alt((tag("*"), tag("->")))(i)?;
-        
+
         let (i, _) = multispace0(i)?;
         let (i, t2) = parse_type(i)?; // ２つ目の型
         let (i, _) = multispace0(i)?;
 
         let (i, _) = char(')')(i)?; //
 
-        Ok((i,
-        TypeExpr {
-            qual: q,
-            prim: if op == "*" {
-                PrimType::Pair(Box::new(t1), Box::new(t2))
-            } else {
-                PrimType::Arrow(Box::new(t1), Box::new(t2))
-            }
-        }))
+        Ok((
+            i,
+            TypeExpr {
+                qual: q,
+                prim: if op == "*" {
+                    PrimType::Pair(Box::new(t1), Box::new(t2))
+                } else {
+                    PrimType::Arrow(Box::new(t1), Box::new(t2))
+                },
+            },
+        ))
     }
 }
 

@@ -132,7 +132,7 @@ fn typeing_qval<'a>(expr: &parser::QValExpr, env: &mut TypeEnv, depth: usize) ->
             // un型の関数内では、lin型の自由変数をキャプチャできないため
             // lin用の型環境を置き換え
             let env_prev = if expr.qual == parser::Qual::Un {
-                Some(mem::take(&mut env.ev_lin))
+                Some(mem::take(&mut env.env_lin))
             } else {
                 None
             };

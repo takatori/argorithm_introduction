@@ -1,10 +1,11 @@
 [workspace]
 
 members = [
-    "regex_engine",
-    "zerosh",
-    "ackerman_func",
-    "dbg_target",
-    "zdbg",
-    "linz"
+  "regex_engine",
+  "zerosh",
+  "ackerman_func",
+  "dbg_target",
+  "zdbg",
+  "linz",
+  "polish_notation_machine",
 ]

@@ -1,10 +1,7 @@
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::{
-        complete::{alpha1, char, multispace0, multispace1},
-        streaming::multispace1,
-    },
+    character::complete::{alpha1, char, multispace0, multispace1},
     error::VerboseError,
     multi,
     sequence::delimited,

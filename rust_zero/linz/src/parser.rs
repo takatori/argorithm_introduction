@@ -142,6 +142,45 @@ pub fn parse_expr(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
     }
 }
 
+fn parse_let(i: &str) -> IResult<&str, LetExpr, VerboseError<&str>> {
+    let (i, _) = multispace1(i)?;
+    let (i, var) = alpha1(i)?;
+
+    let (i, _) = multispace0(i)?;
+    let (i, _) = char(':')(i)?;
+    let (i, _) = multispace0(i)?;
+
+    let (i, ty) = parse_type(i)?; // 引数の型
+
+    let (i, _) = multispace1(i)?;
+    let (i, _) = char('=')(i)?;
+    let (i, _) = multispace1(i)?;
+
+    let (i, expr1) = parse_expr(i)?;
+
+    let (i, _) = multispace0(i)?;
+    let (i, _) = char(';')(i)?;
+    let (i, _) = multispace0(i)?;
+
+    let (i, expr2) = parse_expr(i)?;
+
+    Ok((
+        i,
+        LetExpr {
+            var: var.to_string(),
+            ty,
+            expr1: Box::new(expr1),
+            expr2: Box::new(expr2),
+        },
+    ))
+}
+
+fn parse_split(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {}
+
+fn parse_free(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {}
+
+fn parse_app(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {}
+
 /// 修飾子付き値をパース
 fn parse_qval(q: Qual, i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
     let (i, _) = multispace1(i)?;

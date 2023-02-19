@@ -41,7 +41,7 @@ pub struct IfExpr {
 pub struct SplitExpr {
     pub expr: Box<Expr>,
     pub left: String,
-    pub rigth: String,
+    pub right: String,
     pub body: Box<Expr>,
 }
 
@@ -175,11 +175,39 @@ fn parse_let(i: &str) -> IResult<&str, LetExpr, VerboseError<&str>> {
     ))
 }
 
-fn parse_split(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {}
+fn parse_split(i: &str) -> IResult<&str, SplitExpr, VerboseError<&str>> {
+    let (i, _) = multispace1(i)?;
+    let (i, expr) = parse_expr(i)?;
+    let (i, _) = multispace1(i)?;
+    let (i, _) = tag("as")(i)?;
+    let (i, _) = multispace1(i)?;
+    let (i, left) = alpha1(i)?;
+    let (i, _) = multispace0(i)?;
+    let (i, _) = char(',')(i)?;
+    let (i, _) = multispace0(i)?;
+    let (i, right) = alpha1(i)?;
+    let (i, _) = multispace0(i)?;
 
-fn parse_free(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {}
+    let (i, body) = delimited(
+        char('{'),
+        delimited(multispace0, parse_expr, multispace0),
+        char('}'),
+    )(i)?;
 
-fn parse_app(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {}
+    Ok((
+        i,
+        SplitExpr {
+            expr: Box::new(expr),
+            left: left.to_string(),
+            right: right.to_string(),
+            body: Box::new(body),
+        },
+    ))
+}
+
+fn parse_free(i: &str) -> IResult<&str, FreeExpr, VerboseError<&str>> {}
+
+fn parse_app(i: &str) -> IResult<&str, AppExpr, VerboseError<&str>> {}
 
 /// 修飾子付き値をパース
 fn parse_qval(q: Qual, i: &str) -> IResult<&str, Expr, VerboseError<&str>> {

@@ -142,7 +142,7 @@ pub fn parse_expr(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
     }
 }
 
-fn parse_let(i: &str) -> IResult<&str, LetExpr, VerboseError<&str>> {
+fn parse_let(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
     let (i, _) = multispace1(i)?;
     let (i, var) = alpha1(i)?;
 
@@ -166,16 +166,47 @@ fn parse_let(i: &str) -> IResult<&str, LetExpr, VerboseError<&str>> {
 
     Ok((
         i,
-        LetExpr {
+        Expr::Let(LetExpr {
             var: var.to_string(),
             ty,
             expr1: Box::new(expr1),
             expr2: Box::new(expr2),
-        },
+        }),
     ))
 }
 
-fn parse_split(i: &str) -> IResult<&str, SplitExpr, VerboseError<&str>> {
+fn parse_if(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
+    let (i, _) = multispace1(i)?;
+    let (i, cond_expr) = parse_expr(i)?;
+    let (i, _) = multispace0(i)?;
+
+    let (i, then_expr) = delimited(
+        char('{'),
+        delimited(multispace0, parse_expr, multispace0),
+        char('}'),
+    )(i)?;
+
+    let (i, _) = multispace0(i)?;
+    let (i, _) = tag("else")(i)?;
+    let (i, _) = multispace0(i)?;
+
+    let (i, else_expr) = delimited(
+        char('{'),
+        delimited(multispace0, parse_expr, multispace0),
+        char('}'),
+    )(i)?;
+
+    Ok((
+        i,
+        Expr::If(IfExpr {
+            cond_expr: Box::new(cond_expr),
+            then_expr: Box::new(then_expr),
+            else_expr: Box::new(else_expr),
+        }),
+    ))
+}
+
+fn parse_split(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
     let (i, _) = multispace1(i)?;
     let (i, expr) = parse_expr(i)?;
     let (i, _) = multispace1(i)?;
@@ -196,18 +227,46 @@ fn parse_split(i: &str) -> IResult<&str, SplitExpr, VerboseError<&str>> {
 
     Ok((
         i,
-        SplitExpr {
+        Expr::Split(SplitExpr {
             expr: Box::new(expr),
             left: left.to_string(),
             right: right.to_string(),
             body: Box::new(body),
-        },
+        }),
     ))
 }
 
-fn parse_free(i: &str) -> IResult<&str, FreeExpr, VerboseError<&str>> {}
+fn parse_free(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
+    let (i, _) = multispace1(i)?;
+    let (i, var) = alpha1(i)?;
+    let (i, _) = multispace0(i)?;
+    let (i, _) = char(';')(i)?;
+    let (i, expr) = parse_expr(i)?;
+    Ok((
+        i,
+        Expr::Free(FreeExpr {
+            var: var.to_string(),
+            expr: Box::new(expr),
+        }),
+    ))
+}
 
-fn parse_app(i: &str) -> IResult<&str, AppExpr, VerboseError<&str>> {}
+fn parse_app(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
+    let (i, _) = multispace0(i)?;
+    let (i, expr1) = parse_expr(i)?;
+    let (i, _) = multispace0(i)?;
+    let (i, _) = char(',')(i)?;
+    let (i, _) = multispace0(i)?;
+    let (i, expr2) = parse_expr(i)?;
+
+    Ok((
+        i,
+        Expr::App(AppExpr {
+            expr1: Box::new(expr1),
+            expr2: Box::new(expr2),
+        }),
+    ))
+}
 
 /// 修飾子付き値をパース
 fn parse_qval(q: Qual, i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
@@ -255,6 +314,18 @@ fn parse_fn(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {
             expr: Box::new(expr),
         }),
     ))
+}
+
+fn parse_pair(i: &str) -> IResult<&str, ValExpr, VerboseError<&str>> {
+    let (i, _) = multispace0(i)?;
+    let (i, expr1) = parse_expr(i)?;
+    let (i, _) = multispace0(i)?;
+    let (i, _) = char(',')(i)?;
+    let (i, _) = multispace0(i)?;
+    let (i, expr2) = parse_expr(i)?;
+    let (i, _) = multispace0(i)?;
+    let (i, _) = char('>')(i)?;
+    Ok((i, ValExpr::Pair(Box::new(expr1), Box::new(expr2))))
 }
 
 /// 変数をパース。変数は1文字以上のアルファベットから成り立つ

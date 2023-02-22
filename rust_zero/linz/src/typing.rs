@@ -60,14 +60,14 @@ impl TypeEnvStack {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeEnv {
     env_lin: TypeEnvStack, // lin用
-    env_un: TypeEnvStack, // un用
+    env_un: TypeEnvStack,  // un用
 }
 
 impl TypeEnv {
     pub fn new() -> TypeEnv {
-        TypeEnv { 
-            env_lin: TypeEnvStack::new(), 
-            env_un: TypeEnvStack::new() 
+        TypeEnv {
+            env_lin: TypeEnvStack::new(),
+            env_un: TypeEnvStack::new(),
         }
     }
 
@@ -107,7 +107,7 @@ impl TypeEnv {
             },
             (Some((_, t1)), None) => Some(t1),
             (None, Some((_, t2))) => Some(t2),
-            _ => None,            
+            _ => None,
         }
     }
 }
@@ -121,7 +121,7 @@ type TResult<'a> = Result<parser::TypeExpr, Cow<'a, str>>;
 
 /// 型付け関数
 /// 式と型環境を受け取り、型を返す
-/// 
+///
 /// ## Arguments
 /// * `expr`  - 式
 /// * `env`   - 型環境
@@ -137,9 +137,16 @@ pub fn typing<'a>(expr: &parser::Expr, env: &mut TypeEnv, depth: usize) -> TResu
         parser::Expr::Let(e) => typing_let(e, env, depth),
     }
 }
+fn typing_app<'a>(expr: &parser::AppExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {}
+
+fn typing_free<'a>(expr: &parser::FreeExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {}
+
+fn typing_split<'a>(expr: &parser::SplitExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {}
+
+fn typing_let<'a>(expr: &parser::LetExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {}
 
 /// 修飾子付きの型付け
-fn typeing_qval<'a>(expr: &parser::QValExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {
+fn typing_qval<'a>(expr: &parser::QValExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {
     // プリミティブ型を計算
     let p = match &expr.val {
         parser::ValExpr::Bool(_) => parser::PrimType::Bool,
@@ -150,90 +157,94 @@ fn typeing_qval<'a>(expr: &parser::QValExpr, env: &mut TypeEnv, depth: usize) ->
 
             // expr.qualがunであり、
             // e1かe2の型にlinが含まれていた場合、型付けエラー
-            if expr.qual == parser::Qual::Un 
-                && (t1.qual == parser::Qual::Lin || t2.qual == parser::Qual::Lin) {
-                    return Err("un型のペア内でlin型を使用している".into());
-                }
+            if expr.qual == parser::Qual::Un
+                && (t1.qual == parser::Qual::Lin || t2.qual == parser::Qual::Lin)
+            {
+                return Err("un型のペア内でlin型を使用している".into());
+            }
 
             // ペア型を返す
             parser::PrimType::Pair(Box::new(t1), Box::new(t2))
         }
         parser::ValExpr::Fun(e) => {
-            // 関数の型付け
-            // un型の関数内では、lin型の自由変数をキャプチャできないため
-            // lin用の型環境を置き換え
+            // un型の関数の場合、この関数の外側で定義されたlin型の変数は利用できない
+            // そのため、ここでlin用の型環境を空にする。
+            // ただし、後で復元する必要があるため保存する。
+            // これが、linとunで別々の型環境を用意し、BTreeMapでスタックを実装した理由
             let env_prev = if expr.qual == parser::Qual::Un {
                 Some(mem::take(&mut env.env_lin))
             } else {
                 None
             };
 
-            // depthをインクリメントしてpush
+            // 型環境のスタックをインクリメントする
+            // スタックのプッシュにはdepthが必要なため、インクリメントを忘れずに行う
             let mut depth = depth;
             safe_add(&mut depth, &1, || "変数スコープのネストが深すぎる")?;
             env.push(depth);
-            env.insert(e.var.clone(), e.ty.clone());
+            env.insert(e.var.clone(), e.ty.clone()); // 変数の型を挿入
 
             // 関数中の式を型付け
             let t = typing(&e.expr, env, depth)?;
 
-            // 型環境をpopし、popした型環境の中にlin型が含まれていた場合は、型付けエラー
+            // 型環境をポップし、ポップした型環境の中にlin型の変数(つまり引数)が残っていた場合は、
+            // 消費されなかったということなのでエラー
+            // このように型環境をスタックとして表すことで、変数のスコープを表現できる
+            // また、スタックの上から順にたどるようにget_mutを実装しているため、シャドーイングも表現できる
             let (elin, _) = env.pop(depth);
             for (k, v) in elin.unwrap().iter() {
                 if v.is_some() {
-                    return Err(
-                        format!("関数定義内でlin型の変数\{k}\"を消費していない").into()
-                    );
+                    return Err(format!("関数定義内でlin型の変数\"{k}\"を消費していない").into());
                 }
             }
 
             // lin用の型環境を復元
             if let Some(ep) = env_prev {
                 env.env_lin = ep;
-            }   
+            }
 
             // 関数の型を生成
             parser::PrimType::Arrow(Box::new(e.ty.clone()), Box::new(t))
-
         }
     };
 
     // 修飾子付き型を返す
-    Ok(parser::TypeExpr{
+    Ok(parser::TypeExpr {
         qual: expr.qual,
-        prim: p
+        prim: p,
     })
 }
 
 /// 変数の型付け
+/// lin型の変数が参照された場合は、消費して型環境から削除する
 fn typing_var<'a>(expr: &str, env: &mut TypeEnv) -> TResult<'a> {
     let ret = env.get_mut(expr);
     if let Some(it) = ret {
         // 定義されている
         if let Some(t) = it {
-        // 消費されていない        
-        if t.qual == parser::Qual::Lin {
-            // lin型
-            let eret = t.clone();
-            *it = None; // lin型の変数を消費
-            return Ok(eret);
-        } else {
-            return Ok(t.clone());
+            // 消費されていない
+            if t.qual == parser::Qual::Lin {
+                // lin型
+                let eret = t.clone();
+                *it = None; // lin型の変数を消費
+                return Ok(eret);
+            } else {
+                return Ok(t.clone());
+            }
         }
-    }
     }
     Err(format!("\"{expr}\"という変数は定義されていないか、利用済みか、キャプチャできない").into())
 }
 
 /// if式の型付け
 fn typing_if<'a>(expr: &parser::IfExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {
+    // 条件の式の型つけを行い、その型がboolであるかを検査
     let t1 = typing(&expr.cond_expr, env, depth)?;
-
-    // 条件の式の型はbool
     if t1.prim != parser::PrimType::Bool {
         return Err("ifの条件式がboolでない".into());
     }
 
+    // thenとelseで別々の式を同じ型環境で検査するため、型環境をcloneしてから、それぞれの式の型付けを行う
     let mut e = env.clone();
     let t2 = typing(&expr.then_expr, &mut e, depth)?;
     let t3 = typing(&expr.else_expr, &mut e, depth)?;
@@ -241,7 +252,7 @@ fn typing_if<'a>(expr: &parser::IfExpr, env: &mut TypeEnv, depth: usize) -> TRes
     // thenとelse部の型は同じで、
     // thenとelse部の評価後の型環境は同じかチェック
     if t2 != t3 || e != *env {
-        return Err("ifのthenとelseの式の型が異なる".into())
+        return Err("ifのthenとelseの式の型が異なる".into());
     }
     Ok(t2)
 }

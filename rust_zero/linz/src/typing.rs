@@ -1,4 +1,7 @@
-use crate::{helper::safe_add, parser};
+use crate::{
+    helper::safe_add,
+    parser::{self, PrimType},
+};
 use std::{borrow::Cow, cmp::Ordering, collections::BTreeMap, mem};
 
 /// 変数名から型へのマップ
@@ -141,7 +144,42 @@ fn typing_app<'a>(expr: &parser::AppExpr, env: &mut TypeEnv, depth: usize) -> TR
 
 fn typing_free<'a>(expr: &parser::FreeExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {}
 
-fn typing_split<'a>(expr: &parser::SplitExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {}
+fn typing_split<'a>(expr: &parser::SplitExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {
+    if &expr.left == &expr.right {
+        return Err("同じ変数名は使用できません。".into());
+    }
+
+    let param_type = typing(&expr.expr, env, depth)?;
+    let (q, p) = match param_type.prim {
+        PrimType::Pair(t1, t2) => {
+            let mut depth = depth;
+            safe_add(&mut depth, &1, || "変数スコープのネストが深すぎる")?;
+            env.push(depth);
+            env.insert(expr.left, *t1);
+            env.insert(expr.right, *t2);
+
+            // 関数中の式を型付け
+            let t = typing(&expr.body, env, depth)?;
+
+            let (elin, _) = env.pop(depth);
+            for (k, v) in elin.unwrap().iter() {
+                if v.is_some() {
+                    return Err(format!("関数定義内でlin型の変数\"{k}\"を消費していない").into());
+                }
+            }
+
+            (
+                t.qual,
+                parser::PrimType::Arrow(Box::new(param_type), Box::new(t)),
+            )
+        }
+        _ => {
+            return Err("splitでペア型以外を使用している".into());
+        }
+    };
+
+    Ok(parser::TypeExpr { qual: q, prim: p })
+}
 
 fn typing_let<'a>(expr: &parser::LetExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {}
 

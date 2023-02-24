@@ -140,7 +140,22 @@ pub fn typing<'a>(expr: &parser::Expr, env: &mut TypeEnv, depth: usize) -> TResu
         parser::Expr::Let(e) => typing_let(e, env, depth),
     }
 }
-fn typing_app<'a>(expr: &parser::AppExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {}
+fn typing_app<'a>(expr: &parser::AppExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {
+    let func_t = typing(&expr.expr1, env, depth)?;
+    let param_t = typing(&expr.expr2, env, depth)?;
+
+    match func_t.prim {
+        PrimType::Arrow(e1, e2) => {
+            if *e1 != param_t {
+                return Err("関数の引数型と与えられた変数の型が異なる".into());
+            }
+            Ok(*e2)
+        }
+        _ => {
+            return Err("appで関数型以外を使用している".into());
+        }
+    }
+}
 
 fn typing_free<'a>(expr: &parser::FreeExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {}
 

@@ -157,7 +157,25 @@ fn typing_app<'a>(expr: &parser::AppExpr, env: &mut TypeEnv, depth: usize) -> TR
     }
 }
 
-fn typing_free<'a>(expr: &parser::FreeExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {}
+fn typing_free<'a>(expr: &parser::FreeExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {
+    let t = env.get_mut(&expr.var);
+    if let Some(it) = t {
+        if it.is_some() {
+            *it = None;
+        } else {
+            return Err("すでに消費済みのリソースを解放している".into());
+        }
+    } else {
+        return Err("存在しない変数".into());
+    }
+
+    let t = typing(&expr.expr, env, depth)?;
+
+    Ok(parser::TypeExpr {
+        qual: t.qual,
+        prim: t.prim,
+    })
+}
 
 fn typing_split<'a>(expr: &parser::SplitExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {
     if &expr.left == &expr.right {

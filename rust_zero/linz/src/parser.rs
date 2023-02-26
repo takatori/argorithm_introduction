@@ -254,9 +254,7 @@ fn parse_free(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
 fn parse_app(i: &str) -> IResult<&str, Expr, VerboseError<&str>> {
     let (i, _) = multispace0(i)?;
     let (i, expr1) = parse_expr(i)?;
-    let (i, _) = multispace0(i)?;
-    let (i, _) = char(',')(i)?;
-    let (i, _) = multispace0(i)?;
+    let (i, _) = multispace1(i)?;
     let (i, expr2) = parse_expr(i)?;
 
     Ok((

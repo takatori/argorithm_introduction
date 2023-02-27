@@ -1,6 +1,6 @@
 use crate::{
     helper::safe_add,
-    parser::{self, PrimType},
+    parser::{self, PrimType, TypeExpr},
 };
 use std::{borrow::Cow, cmp::Ordering, collections::BTreeMap, mem};
 
@@ -183,13 +183,13 @@ fn typing_split<'a>(expr: &parser::SplitExpr, env: &mut TypeEnv, depth: usize) -
     }
 
     let param_type = typing(&expr.expr, env, depth)?;
-    let (q, p) = match param_type.prim {
+    let (q, p) = match param_type.prim.clone() {
         PrimType::Pair(t1, t2) => {
             let mut depth = depth;
             safe_add(&mut depth, &1, || "変数スコープのネストが深すぎる")?;
             env.push(depth);
-            env.insert(expr.left, *t1);
-            env.insert(expr.right, *t2);
+            env.insert(expr.left.clone(), *t1);
+            env.insert(expr.right.clone(), *t2);
 
             // 関数中の式を型付け
             let t = typing(&expr.body, env, depth)?;
@@ -214,7 +214,31 @@ fn typing_split<'a>(expr: &parser::SplitExpr, env: &mut TypeEnv, depth: usize) -
     Ok(parser::TypeExpr { qual: q, prim: p })
 }
 
-fn typing_let<'a>(expr: &parser::LetExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {}
+fn typing_let<'a>(expr: &parser::LetExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {
+    let t1 = typing(&expr.expr1, env, depth)?;
+    if expr.ty != t1 {
+        return Err("変数の型が一致しない".into());
+    }
+
+    let mut depth = depth;
+    safe_add(&mut depth, &1, || "変数スコープのネストが深すぎる")?;
+    env.push(depth);
+    env.insert(expr.var.clone(), expr.ty.clone());
+
+    let t2 = typing(&expr.expr2, env, depth)?;
+
+    let (elin, _) = env.pop(depth);
+    for (k, v) in elin.unwrap().iter() {
+        if v.is_some() {
+            return Err(format!("関数定義内でlin型の変数\"{k}\"を消費していない").into());
+        }
+    }
+
+    Ok(parser::TypeExpr {
+        qual: t2.qual,
+        prim: t2.prim,
+    })
+}
 
 /// 修飾子付きの型付け
 fn typing_qval<'a>(expr: &parser::QValExpr, env: &mut TypeEnv, depth: usize) -> TResult<'a> {

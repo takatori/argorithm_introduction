@@ -151,9 +151,7 @@ fn typing_app<'a>(expr: &parser::AppExpr, env: &mut TypeEnv, depth: usize) -> TR
             }
             Ok(*e2)
         }
-        _ => {
-            return Err("appで関数型以外を使用している".into());
-        }
+        _ => Err("appで関数型以外を使用している".into()),
     }
 }
 
